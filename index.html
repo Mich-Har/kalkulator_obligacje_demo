@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kalkulator Obligacji Skarbowych</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:             #F4F3EF;
+      --surface:        #FFFFFF;
+      --surface-2:      #F9F8F5;
+      --text:           #1A1916;
+      --text-2:         #6B6860;
+      --text-3:         #9B9890;
+      --accent:         #C4622D;
+      --accent-light:   #F5EDE7;
+      --accent-dark:    #A04E22;
+      --navy:           #1E3A5F;
+      --navy-light:     #E8EEF5;
+      --success:        #2D6A4F;
+      --success-light:  #E8F5EE;
+      --warning:        #92400E;
+      --warning-light:  #FEF3C7;
+      --border:         #E2E0DA;
+      --shadow:         0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:      0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+      --radius:         12px;
+      --radius-sm:      8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; }
+    input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; background: var(--border); border-radius: 3px; outline: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+    @media (max-width: 640px) {
+      .kpi-grid { grid-template-columns: 1fr 1fr !important; }
+      .products-grid { grid-template-columns: 1fr !important; }
+      .stepper-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .chart-wrap { height: 300px !important; }
+      .detail-table-wrap { overflow-x: auto; }
+      .assumptions-grid { grid-template-columns: 1fr !important; }
+      .btn-row { flex-direction: column !important; }
+      .btn-row > * { width: 100% !important; }
+      .indicator-table-wrap { overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!--
+    DEVELOPMENT: Loads from separate JS files (requires HTTP server).
+    PRODUCTION: Use build.sh to concatenate into single-file index.html.
+  -->
+  <script type="text/babel" src="js/constants.js"></script>
+  <script type="text/babel" src="js/helpers.js"></script>
+  <script type="text/babel" src="js/engine.js"></script>
+  <script type="text/babel" src="js/ui.js"></script>
+  <script type="text/babel" src="js/views/StartView.js"></script>
+  <script type="text/babel" src="js/views/PortfolioView.js"></script>
+  <script type="text/babel" src="js/views/IKEView.js"></script>
+  <script type="text/babel" src="js/views/ResultsView.js"></script>
+  <script type="text/babel" src="js/views/DetailsView.js"></script>
+  <script type="text/babel" src="js/App.js"></script>
+</body>
+</html>

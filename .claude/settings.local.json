@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -L -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.obligacjeskarbowe.pl/\" -o /tmp/oblsk_main.html)",
+      "Read(//tmp/**)",
+      "WebFetch(domain:www.obligacjeskarbowe.pl)",
+      "Bash(cd \"C:\\\\Users\\\\harci\\\\Desktop\\\\ClaudeCode_Workspace\\\\obligacjeSkarbowe\" && bash build.sh)",
+      "Bash(bash build.sh)",
+      "Bash(ls \"C:\\\\Users\\\\harci\\\\.claude\\\\projects\\\\C--Users-harci-Desktop-ClaudeCode-Workspace-obligacjeSkarbowe\\\\memory\\\\\" 2>/dev/null || echo \"empty\")"
+    ]
+  }
+}

@@ -1,0 +1,3079 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kalkulator Obligacji Skarbowych</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:             #F4F3EF;
+      --surface:        #FFFFFF;
+      --surface-2:      #F9F8F5;
+      --text:           #1A1916;
+      --text-2:         #6B6860;
+      --text-3:         #9B9890;
+      --accent:         #C4622D;
+      --accent-light:   #F5EDE7;
+      --accent-dark:    #A04E22;
+      --navy:           #1E3A5F;
+      --navy-light:     #E8EEF5;
+      --success:        #2D6A4F;
+      --success-light:  #E8F5EE;
+      --warning:        #92400E;
+      --warning-light:  #FEF3C7;
+      --border:         #E2E0DA;
+      --shadow:         0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-md:      0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+      --radius:         12px;
+      --radius-sm:      8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; }
+    input[type="range"] { -webkit-appearance: none; appearance: none; height: 6px; background: var(--border); border-radius: 3px; outline: none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+    @media (max-width: 640px) {
+      .kpi-grid { grid-template-columns: 1fr 1fr !important; }
+      .products-grid { grid-template-columns: 1fr !important; }
+      .stepper-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .chart-wrap { height: 300px !important; }
+      .detail-table-wrap { overflow-x: auto; }
+      .assumptions-grid { grid-template-columns: 1fr !important; }
+      .btn-row { flex-direction: column !important; }
+      .btn-row > * { width: 100% !important; }
+      .indicator-table-wrap { overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+
+// ============================================================
+// CONSTANTS & DATA
+// ============================================================
+
+const STEP_LABELS = ['Start', 'Portfel', 'IKE', 'Wynik', 'Szczegóły'];
+
+const DEFAULT_INFLATION    = [4.5, 4.0, 3.8, 3.5, 3.3, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0];
+const DEFAULT_NBP_RATE     = [5.75, 5.25, 4.75, 4.25, 4.00, 3.75, 3.75, 3.75, 3.75, 3.75, 3.75, 3.75];
+const DEFAULT_WIBOR6M      = [5.40, 4.90, 4.40, 4.00, 3.75, 3.60, 3.60, 3.60, 3.60, 3.60, 3.60, 3.60];
+const DEFAULT_DEPOSIT_RATE = [5.00, 4.80, 4.50, 4.20, 4.00, 3.80, 3.80, 3.80, 3.80, 3.80, 3.80, 3.80];
+
+const IKE_FEE_RATES = { 1: 0.0000, 2: 0.0016, 3: 0.0015, 4: 0.0014, 5: 0.0013, 6: 0.0012, 7: 0.0011 };
+const IKE_FEE_RATE_DEFAULT = 0.0010;
+const IKE_FEE_CAP = 200;
+
+const PRESETS = {
+  konserwatywny: { label: 'Konserwatywny', inflation: 3.0, nbpRate: 4.50, wibor6m: 4.20, depositRate: 4.00 },
+  bazowy:        { label: 'Bazowy',        inflation: 4.0, nbpRate: 5.75, wibor6m: 5.40, depositRate: 5.00 },
+  wysoka_inflacja: { label: 'Wysoka inflacja', inflation: 7.0, nbpRate: 6.50, wibor6m: 6.20, depositRate: 5.50 },
+  optymistyczny: { label: 'Optymistyczny', inflation: 2.5, nbpRate: 3.50, wibor6m: 3.20, depositRate: 3.50 },
+};
+
+const PRESET_DESCRIPTIONS = {
+  konserwatywny: 'Stabilna gospodarka, niska inflacja, umiarkowane stopy procentowe. Dobre dla pesymistów rynkowych.',
+  bazowy: 'Scenariusz najbliższy obecnym prognozom NBP — stopniowa dezinflacja i obniżki stóp.',
+  wysoka_inflacja: 'Utrzymująca się wysoka inflacja i odpowiadające jej wysokie stopy. Korzystny dla obligacji indeksowanych inflacją.',
+  optymistyczny: 'Szybkie obniżki stóp i niska inflacja. Korzystny dla obligacji stałoprocentowych i lokat.',
+};
+
+const PRESET_ADVANCED = {
+  konserwatywny: {
+    inflation:   [3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0,3.0],
+    nbpRate:     [4.50,4.50,4.50,4.50,4.50,4.50,4.50,4.50,4.50,4.50,4.50,4.50],
+    wibor6m:     [4.20,4.20,4.20,4.20,4.20,4.20,4.20,4.20,4.20,4.20,4.20,4.20],
+    depositRate: [4.00,4.00,4.00,4.00,4.00,4.00,4.00,4.00,4.00,4.00,4.00,4.00],
+    after12: { inflation: 3.0, nbpRate: 4.50, wibor6m: 4.20, depositRate: 4.00 },
+  },
+  bazowy: {
+    inflation:   [...DEFAULT_INFLATION],
+    nbpRate:     [...DEFAULT_NBP_RATE],
+    wibor6m:     [...DEFAULT_WIBOR6M],
+    depositRate: [...DEFAULT_DEPOSIT_RATE],
+    after12: { inflation: 2.5, nbpRate: 3.50, wibor6m: 3.40, depositRate: 3.50 },
+  },
+  wysoka_inflacja: {
+    inflation:   [7.0,7.0,6.5,6.5,6.0,6.0,5.5,5.5,5.0,5.0,5.0,5.0],
+    nbpRate:     [6.50,6.50,6.25,6.00,5.75,5.75,5.50,5.50,5.50,5.50,5.50,5.50],
+    wibor6m:     [6.20,6.20,6.00,5.80,5.60,5.60,5.40,5.40,5.40,5.40,5.40,5.40],
+    depositRate: [5.50,5.50,5.30,5.20,5.00,5.00,4.80,4.80,4.80,4.80,4.80,4.80],
+    after12: { inflation: 4.0, nbpRate: 5.00, wibor6m: 4.80, depositRate: 4.50 },
+  },
+  optymistyczny: {
+    inflation:   [2.5,2.5,2.5,2.5,2.5,2.5,2.5,2.5,2.5,2.5,2.5,2.5],
+    nbpRate:     [3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50],
+    wibor6m:     [3.20,3.20,3.20,3.20,3.20,3.20,3.20,3.20,3.20,3.20,3.20,3.20],
+    depositRate: [3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50,3.50],
+    after12: { inflation: 2.5, nbpRate: 3.50, wibor6m: 3.20, depositRate: 3.50 },
+  },
+};
+
+// ============================================================
+// PRODUCTS — full specification per obligacjeskarbowe.pl (marzec 2026)
+// Each product has `count` = number of bonds to buy (user sets this)
+// ============================================================
+
+const DEFAULT_PRODUCTS = [
+  { productId: "ROR", count: 0, maturityMonths: 12, initialRate: 4.25, rateChangeMonths: 1, indexType: "nbp_ref", margin: 0.00, couponFrequencyMonths: 1, capitalizationMonths: null, conversionPrice: 99.90, earlyRedemptionFee: 0.50, nominalProtection: true, nominalProtectionMonths: 1, couponType: "coupon", reinvestCoupon: false },
+  { productId: "DOR", count: 0, maturityMonths: 24, initialRate: 4.40, rateChangeMonths: 1, indexType: "nbp_ref", margin: 0.15, couponFrequencyMonths: 1, capitalizationMonths: null, conversionPrice: 99.90, earlyRedemptionFee: 0.70, nominalProtection: true, nominalProtectionMonths: 1, couponType: "coupon", reinvestCoupon: false },
+  { productId: "TOS", count: 0, maturityMonths: 36, initialRate: 4.65, rateChangeMonths: 36, indexType: "fixed", margin: 0.00, couponFrequencyMonths: null, capitalizationMonths: 12, conversionPrice: 99.90, earlyRedemptionFee: 1.00, nominalProtection: true, nominalProtectionMonths: 'full', couponType: "capitalization", fixedRate: 4.65 },
+  { productId: "COI", count: 0, maturityMonths: 48, initialRate: 5.00, rateChangeMonths: 12, indexType: "inflation", margin: 1.50, couponFrequencyMonths: 12, capitalizationMonths: null, conversionPrice: 99.90, earlyRedemptionFee: 2.00, nominalProtection: true, nominalProtectionMonths: 12, couponType: "coupon", reinvestCoupon: false },
+  { productId: "EDO", count: 100, maturityMonths: 120, initialRate: 5.60, rateChangeMonths: 12, indexType: "inflation", margin: 2.00, couponFrequencyMonths: null, capitalizationMonths: 12, conversionPrice: 99.90, earlyRedemptionFee: 3.00, nominalProtection: true, nominalProtectionMonths: 'full', couponType: "capitalization" },
+  { productId: "ROS", count: 0, maturityMonths: 72, initialRate: 5.20, rateChangeMonths: 12, indexType: "inflation", margin: 2.00, couponFrequencyMonths: null, capitalizationMonths: 12, conversionPrice: 99.90, earlyRedemptionFee: 2.00, nominalProtection: true, nominalProtectionMonths: 'full', couponType: "capitalization" },
+  { productId: "ROD", count: 0, maturityMonths: 144, initialRate: 5.85, rateChangeMonths: 12, indexType: "inflation", margin: 2.50, couponFrequencyMonths: null, capitalizationMonths: 12, conversionPrice: null, earlyRedemptionFee: 3.00, nominalProtection: true, nominalProtectionMonths: 'full', couponType: "capitalization" },
+];
+
+const DEFAULT_REF_PRODUCTS = [
+  { productId: "LOK", count: 0, maturityMonths: null, initialRate: 5.00, rateChangeMonths: null, indexType: "fixed", margin: 0, couponFrequencyMonths: null, capitalizationMonths: 12, conversionPrice: null, earlyRedemptionFee: 0, nominalProtection: false, nominalProtectionMonths: null, couponType: "capitalization", fixedRate: 5.00 },
+  { productId: "KOS", count: 0, maturityMonths: null, initialRate: 4.00, rateChangeMonths: null, indexType: "fixed", margin: 0, couponFrequencyMonths: null, capitalizationMonths: 12, conversionPrice: null, earlyRedemptionFee: 0, nominalProtection: false, nominalProtectionMonths: null, couponType: "capitalization", fixedRate: 4.00 },
+];
+
+const ALL_DEFAULT_PRODUCTS = [...DEFAULT_PRODUCTS, ...DEFAULT_REF_PRODUCTS];
+
+const PRODUCT_NAMES = {
+  ROR: 'ROR (roczne)',
+  DOR: 'DOR (2-latki)',
+  TOS: 'TOS (3-latki)',
+  COI: 'COI (4-latki)',
+  EDO: 'EDO (10-latki)',
+  ROS: 'ROS (6-latki rodzinne)',
+  ROD: 'ROD (12-latki rodzinne)',
+  LOK: 'Lokata bankowa',
+  KOS: 'Konto oszczędnościowe',
+  INF: 'Benchmark inflacyjny',
+};
+
+const PRODUCT_SHORT = {
+  ROR: 'ROR', DOR: 'DOR', TOS: 'TOS', COI: 'COI', EDO: 'EDO',
+  ROS: 'ROS', ROD: 'ROD', LOK: 'Lokata', KOS: 'Konto', INF: 'Inflacja',
+};
+
+const PRODUCT_DESCRIPTIONS = {
+  ROR: 'Obligacje roczne ze zmiennym oprocentowaniem opartym o stopę referencyjną NBP. Odsetki wypłacane co miesiąc. Najbardziej płynne obligacje skarbowe.',
+  DOR: 'Obligacje 2-letnie ze zmiennym oprocentowaniem. Stopa NBP + 0,15% marży. Odsetki co miesiąc.',
+  TOS: 'Obligacje 3-letnie o stałym oprocentowaniu 4,65%. Odsetki kapitalizowane rocznie (procent składany). Wypłata przy wykupie.',
+  COI: 'Obligacje 4-letnie indeksowane inflacją CPI. Od 2. roku: inflacja + 1,50% marży. Odsetki wypłacane co rok (kupon).',
+  EDO: 'Obligacje 10-letnie indeksowane inflacją z najwyższą marżą 2,00%. Odsetki kapitalizowane — potężny efekt procentu składanego. Najlepszy produkt do długoterminowego oszczędzania.',
+  ROS: 'Obligacje 6-letnie rodzinne (wymaga programu Rodzina 800+). Inflacja + 2,00% marży. Odsetki kapitalizowane.',
+  ROD: 'Obligacje 12-letnie rodzinne (wymaga programu Rodzina 800+). Najwyższa marża 2,50% + inflacja.',
+  LOK: 'Symulacja lokaty bankowej ze stałym oprocentowaniem. Możesz dostosować stopę do oferty Twojego banku.',
+  KOS: 'Symulacja konta oszczędnościowego. W praktyce banki często zmieniają stawki — tu przyjmujemy stałą wartość.',
+};
+
+const PRODUCT_COLORS = {
+  ROR: '#3B82F6', DOR: '#6366F1', TOS: '#8B5CF6',
+  COI: '#C4622D', EDO: '#A04E22', ROS: '#2D6A4F', ROD: '#1E3A5F',
+  LOK: '#0891B2', KOS: '#0D9488', INF: '#92400E',
+};
+
+const INDEX_LABELS = {
+  inflation: 'Inflacja CPI', nbp_ref: 'Stopa NBP', wibor6m: 'WIBOR 6M',
+  fixed: 'Stała stopa', inflation_benchmark: 'Inflacja',
+};
+
+const INDICATOR_TOOLTIPS = {
+  inflation: 'Inflacja CPI to wskaźnik wzrostu cen publikowany przez GUS. Kluczowy dla obligacji indeksowanych (COI, EDO, ROS, ROD) — ich oprocentowanie od 2. roku to inflacja + marża. Cel inflacyjny NBP: 2,5% +/- 1pp.',
+  nbpRate: 'Stopa referencyjna NBP — główna stopa procentowa w Polsce. Bezpośrednio wpływa na ROR i DOR. Gdy NBP obniża stopy — ROR/DOR dają mniej.',
+  wibor6m: 'WIBOR 6M — stawka międzybankowa. W aktualnej ofercie (marzec 2026) TOS ma stałe oprocentowanie 4,65%. Wskaźnik pozostaje na wypadek zmian w przyszłych emisjach.',
+  depositRate: 'Średnie oprocentowanie lokat i kont oszczędnościowych. Wpływa na wynik LOK i KOS. W praktyce zmienia się wraz ze stopami NBP.',
+};
+
+const CHART_COLORS = ['#C4622D', '#1E3A5F', '#2D6A4F', '#7C3AED', '#0891B2', '#DB2777', '#D97706', '#4F46E5', '#059669', '#DC2626'];
+
+const PRODUCT_TOOLTIPS = {
+  margin: 'Marża to stała wartość dodawana do wskaźnika bazowego od 2. roku. Np. EDO z marżą 2,00% przy inflacji 4% daje 6% rocznie.',
+  earlyRedemption: 'Opłata w zł za obligację przy wykupie przed terminem zapadalności. Potrącana z naliczonych odsetek.',
+  nominalProtection: 'Ochrona nominalna gwarantuje, że przy wcześniejszym wykupie otrzymasz co najmniej nominał (100 zł) minus opłata za wykup.',
+  capitalization: 'Odsetki doliczane do kapitału — w kolejnych okresach same generują odsetki (procent składany). Im dłuższy okres, tym większy efekt.',
+  coupon: 'Odsetki wypłacane na konto (np. co rok). Nie korzystasz z procentu składanego, ale masz regularny dostęp do odsetek.',
+  conversionPrice: 'Cena zamiany przy odnowieniu obligacji. Zwykle 99,90 zł zamiast 100 zł — oszczędzasz 0,10 zł na obligacji.',
+  rateChange: 'Jak często oprocentowanie może się zmienić. 1 = co miesiąc, 12 = raz w roku, 36 = raz na 3 lata.',
+  ike: 'IKE pozwala uniknąć podatku Belki (19%) pod warunkiem oszczędzania do 60. roku życia. Roczna opłata za prowadzenie, ale przy dłuższym horyzoncie korzyść przewyższa koszty.',
+};
+
+// Column definitions for the product table
+const PRODUCT_TABLE_COLUMNS = [
+  { key: 'maturityMonths', label: 'Zapadalność', unit: 'mc', tooltip: 'Liczba miesięcy do wykupu. Po tym czasie państwo oddaje nominał.' },
+  { key: 'initialRate', label: '% startowe', unit: '%', tooltip: 'Oprocentowanie na pierwszy okres odsetkowy. Często tylko na początek — potem zależy od wskaźnika.' },
+  { key: 'rateChangeMonths', label: 'Zmiana co', unit: 'mc', tooltip: PRODUCT_TOOLTIPS.rateChange },
+  { key: 'indexLabel', label: 'Wskaźnik', tooltip: 'Wskaźnik od którego zależy dalsze oprocentowanie: stopa NBP, inflacja CPI lub WIBOR 6M.' },
+  { key: 'margin', label: 'Marża', unit: '%', tooltip: PRODUCT_TOOLTIPS.margin },
+  { key: 'couponFrequencyMonths', label: 'Odsetki co', unit: 'mc', tooltip: 'Jak często odsetki trafiają na konto. Brak = kapitalizacja (odsetki doliczane do kapitału).' },
+  { key: 'capitalizationMonths', label: 'Kapital. co', unit: 'mc', tooltip: PRODUCT_TOOLTIPS.capitalization },
+  { key: 'conversionPrice', label: 'Cena zamiany', unit: 'zł', tooltip: PRODUCT_TOOLTIPS.conversionPrice },
+  { key: 'earlyRedemptionFee', label: 'Koszt wykupu', unit: 'zł/szt', tooltip: PRODUCT_TOOLTIPS.earlyRedemption },
+  { key: 'nominalProtectionMonths', label: 'Ochrona nom.', tooltip: PRODUCT_TOOLTIPS.nominalProtection },
+];
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+function formatPLN(n) {
+  if (n == null || isNaN(n)) return '0 zł';
+  const neg = n < 0;
+  const abs = Math.abs(Math.round(n * 100) / 100);
+  const parts = abs.toFixed(2).split('.');
+  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const dec = parts[1];
+  const str = dec === '00' ? intPart : intPart + ',' + dec;
+  return (neg ? '-' : '') + str + ' zł';
+}
+
+function formatPct(n, decimals = 2) {
+  if (n == null || isNaN(n)) return '0%';
+  return n.toFixed(decimals).replace('.', ',') + '%';
+}
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function interpolateLinear(start, end, count) {
+  if (count <= 1) return [start];
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    result.push(Math.round((start + (end - start) * i / (count - 1)) * 100) / 100);
+  }
+  return result;
+}
+
+function pluralYears(n) {
+  if (n === 1) return '1 rok';
+  if (n >= 2 && n <= 4) return n + ' lata';
+  return n + ' lat';
+}
+
+// ============================================================
+// CALCULATION ENGINE
+// ============================================================
+
+function getIndicator(array, afterYear12, year) {
+  return year <= 12 ? (array[year - 1] ?? afterYear12) : afterYear12;
+}
+
+function getRate(product, year, indicators) {
+  if (year === 1) return product.initialRate;
+  if (product.indexType === 'fixed') return product.fixedRate || product.initialRate;
+  if (product.indexType === 'inflation_benchmark') return indicators.inflation[year - 1] ?? 3.0;
+
+  const prevYear = year - 1;
+  let base = 0;
+  if (product.indexType === 'inflation') base = indicators.inflation[prevYear] ?? 3.0;
+  else if (product.indexType === 'nbp_ref') base = indicators.nbpRate[prevYear] ?? 3.75;
+  else if (product.indexType === 'wibor6m') base = indicators.wibor6m[prevYear] ?? 3.6;
+  return Math.max(0, base + product.margin);
+}
+
+function buildIndicators(state) {
+  const h = state.horizon;
+  const result = { inflation: [], nbpRate: [], wibor6m: [], depositRate: [] };
+  for (let y = 1; y <= h; y++) {
+    result.inflation.push(getIndicator(state.inflationByYear, state.indicatorAfterYear12.inflation, y));
+    result.nbpRate.push(getIndicator(state.nbpRateByYear, state.indicatorAfterYear12.nbpRate, y));
+    result.wibor6m.push(getIndicator(state.wibor6mByYear, state.indicatorAfterYear12.wibor6m, y));
+    result.depositRate.push(getIndicator(state.depositRateByYear, state.indicatorAfterYear12.depositRate, y));
+  }
+  return result;
+}
+
+function calculateCumulativeInflation(indicators, horizon) {
+  const cumInf = [1];
+  for (let y = 1; y <= horizon; y++) {
+    cumInf.push(cumInf[y - 1] * (1 + (indicators.inflation[y - 1] ?? 3.0) / 100));
+  }
+  return cumInf;
+}
+
+function calculateProductYearly(product, bondCount, horizon, indicators) {
+  const capital = bondCount * 100;
+  const yearly = [{ year: 0, value: capital, rate: 0 }];
+
+  if (product.indexType === 'inflation_benchmark') {
+    let cumInf = 1;
+    for (let y = 1; y <= horizon; y++) {
+      cumInf *= (1 + (indicators.inflation[y - 1] ?? 3.0) / 100);
+      yearly.push({ year: y, value: capital * cumInf, rate: indicators.inflation[y - 1] ?? 3.0 });
+    }
+    return yearly;
+  }
+
+  if (product.couponType === 'coupon') {
+    let totalCoupons = 0;
+    for (let y = 1; y <= horizon; y++) {
+      const rate = getRate(product, y, indicators);
+      const coupon = capital * rate / 100;
+      totalCoupons += coupon;
+      yearly.push({ year: y, value: capital + totalCoupons, rate });
+    }
+    return yearly;
+  }
+
+  // Capitalization
+  let value = capital;
+  for (let y = 1; y <= horizon; y++) {
+    const rate = getRate(product, y, indicators);
+    value = value * (1 + rate / 100);
+    yearly.push({ year: y, value, rate });
+  }
+  return yearly;
+}
+
+function applyEarlyRedemption(finalValue, product, bondCount, horizon, capital) {
+  const maturityYears = product.maturityMonths ? product.maturityMonths / 12 : null;
+  let redemptionCost = 0;
+  if (maturityYears && horizon < maturityYears && product.earlyRedemptionFee > 0) {
+    redemptionCost = product.earlyRedemptionFee * bondCount;
+    finalValue -= redemptionCost;
+    if (product.nominalProtection) {
+      finalValue = Math.max(finalValue, capital - redemptionCost);
+    }
+  }
+  return { finalValue, redemptionCost };
+}
+
+function calculateIkeFees(totalBonds, horizon, additionalCosts) {
+  const fees = [];
+  let total = 0;
+  for (let y = 1; y <= horizon; y++) {
+    const feeRate = IKE_FEE_RATES[y] !== undefined ? IKE_FEE_RATES[y] : IKE_FEE_RATE_DEFAULT;
+    const nominal = totalBonds * 100;
+    const rawFee = nominal * feeRate;
+    const fee = Math.min(rawFee, IKE_FEE_CAP) + additionalCosts;
+    fees.push({ year: y, contractYear: y, feeRate, rawFee, fee });
+    total += fee;
+  }
+  return { fees, total };
+}
+
+// Calculate IKE fee per year for the whole portfolio, then return product's share
+function getProductIkeFeeShare(totalBonds, productBonds, year, additionalCosts) {
+  if (totalBonds <= 0) return 0;
+  const feeRate = IKE_FEE_RATES[year] !== undefined ? IKE_FEE_RATES[year] : IKE_FEE_RATE_DEFAULT;
+  const nominal = totalBonds * 100;
+  const rawFee = nominal * feeRate;
+  const totalFee = Math.min(rawFee, IKE_FEE_CAP) + additionalCosts;
+  return totalFee * (productBonds / totalBonds);
+}
+
+function applyIkeFeesToYearly(yearly, productBonds, totalBonds, horizon, additionalCosts) {
+  const result = [{ ...yearly[0] }];
+  const ikeFees = [];
+  for (let y = 1; y <= horizon; y++) {
+    const fee = getProductIkeFeeShare(totalBonds, productBonds, y, additionalCosts);
+    ikeFees.push(fee);
+
+    let val = yearly[y].value;
+    // Fee from previous year deducted at start of current year
+    if (y >= 2 && ikeFees[y - 2] !== undefined) {
+      val -= ikeFees[y - 2];
+    }
+    result.push({ ...yearly[y], value: val, ikeFee: fee });
+  }
+  if (horizon >= 1) {
+    result[horizon].value -= ikeFees[horizon - 1];
+  }
+  return result;
+}
+
+function estimateIkeCost(totalBonds, horizon) {
+  const { total } = calculateIkeFees(totalBonds, horizon, 0);
+  return total;
+}
+
+function generateInsights(variants, state, totalCapital, cumInflation, indicators) {
+  const insights = [];
+  if (variants.length === 0) return insights;
+
+  const noIkeVariants = variants.filter(v => v.variantType === 'NO_IKE');
+  const ikeVariants = variants.filter(v => v.variantType === 'IKE_MET');
+
+  if (noIkeVariants.length > 0) {
+    const best = noIkeVariants[0];
+    insights.push(`Najlepszy wynik bez IKE: ${PRODUCT_NAMES[best.productId] || best.label} — ${formatPLN(best.finalValue)} (${best.returnPct >= 0 ? '+' : ''}${formatPct(best.returnPct)}).`);
+  }
+
+  if (ikeVariants.length > 0 && noIkeVariants.length > 0) {
+    const bestIke = ikeVariants[0];
+    const bestNoIke = noIkeVariants[0];
+    const totalBonds = state.products.reduce((s, p) => s + (p.count || 0), 0);
+    const ikeFees = calculateIkeFees(totalBonds, state.horizon, state.ikeAdditionalCosts || 0);
+    if (bestIke.finalValue > bestNoIke.finalValue) {
+      const benefit = bestIke.finalValue - bestNoIke.finalValue;
+      insights.push(`Z IKE zyskujesz ${formatPLN(benefit)} więcej mimo kosztów prowadzenia (${formatPLN(ikeFees.total)}).`);
+    } else {
+      insights.push(`Koszty IKE (${formatPLN(ikeFees.total)}) pochłaniają korzyść podatkową przy tym horyzoncie.`);
+    }
+  }
+
+  if (noIkeVariants.length >= 2) {
+    const first = noIkeVariants[0];
+    const second = noIkeVariants[1];
+    const diff = first.finalValue - second.finalValue;
+    if (diff > 0) {
+      insights.push(`${PRODUCT_SHORT[first.productId]} daje ${formatPLN(diff)} więcej niż ${PRODUCT_SHORT[second.productId]}.`);
+    }
+  }
+
+  const lokVariant = noIkeVariants.find(v => v.productId === 'LOK');
+  if (lokVariant) {
+    const lokCapital = lokVariant.yearlyValues[0]?.value || 0;
+    if (lokVariant.realValue >= lokCapital) {
+      insights.push('Lokata utrzymuje realną wartość w tym scenariuszu.');
+    } else {
+      insights.push('Lokata traci realną wartość — inflacja wyprzedza oprocentowanie.');
+    }
+  }
+
+  return insights;
+}
+
+// ============================================================
+// MAIN SIMULATION — always computes NO_IKE + IKE_MET per product
+// Optional withdrawals: { [productId]: { year, count } }
+// ============================================================
+
+function calculateSimulation(state, withdrawals) {
+  const horizon = state.horizon;
+  const indicators = buildIndicators(state);
+  const cumInflation = calculateCumulativeInflation(indicators, horizon);
+  const activeProducts = state.products.filter(p => (p.count || 0) > 0);
+  const totalBonds = activeProducts.reduce((s, p) => s + p.count, 0);
+  const totalCapital = totalBonds * 100;
+
+  const variants = [];
+
+  for (const product of activeProducts) {
+    const bondCount = product.count;
+    const capital = bondCount * 100;
+    const yearly = calculateProductYearly(product, bondCount, horizon, indicators);
+
+    // Withdrawal calculations for this product
+    const w = withdrawals && withdrawals[product.productId]
+      && withdrawals[product.productId].year >= 1
+      && withdrawals[product.productId].year <= horizon
+      && withdrawals[product.productId].count > 0
+      ? withdrawals[product.productId] : null;
+
+    let withdrawnGross = 0;
+    let withdrawnRedemptionFee = 0;
+    let remainingBonds = bondCount;
+    let scaleFactor = 1;
+
+    if (w && w.count < bondCount) {
+      const wCount = Math.min(w.count, bondCount - 1);
+      remainingBonds = bondCount - wCount;
+      scaleFactor = remainingBonds / bondCount;
+
+      const valueAtW = yearly[w.year].value;
+      let wValue = valueAtW * (wCount / bondCount);
+
+      const matYears = product.maturityMonths ? product.maturityMonths / 12 : null;
+      if (matYears && w.year < matYears && product.earlyRedemptionFee > 0) {
+        withdrawnRedemptionFee = product.earlyRedemptionFee * wCount;
+        wValue -= withdrawnRedemptionFee;
+        if (product.nominalProtection) {
+          wValue = Math.max(wValue, wCount * 100 - withdrawnRedemptionFee);
+        }
+      }
+      withdrawnGross = wValue;
+    }
+
+    // --- NO_IKE variant ---
+    const noIkeYearly = yearly.map(y => ({ ...y }));
+    if (scaleFactor < 1 && w) {
+      for (let y = w.year; y <= horizon; y++) {
+        noIkeYearly[y] = { ...noIkeYearly[y], value: noIkeYearly[y].value * scaleFactor };
+      }
+    }
+
+    let noIkeFinalRaw = noIkeYearly[horizon].value;
+    const { finalValue: noIkeAfterRedemption, redemptionCost: noIkeRedemption } = applyEarlyRedemption(
+      noIkeFinalRaw, product, remainingBonds, horizon, remainingBonds * 100
+    );
+
+    const noIkeTotalGross = noIkeAfterRedemption + withdrawnGross;
+    const noIkeProfit = noIkeTotalGross - capital;
+    const noIkeTax = Math.max(0, noIkeProfit) * 0.19;
+    const noIkeAfterTax = noIkeTotalGross - noIkeTax;
+    const noIkeReal = noIkeAfterTax / cumInflation[horizon];
+
+    const noIkeYearlyFinal = noIkeYearly.map((y, i) => {
+      let val = y.value;
+      if (w && i >= w.year) val += withdrawnGross;
+      return { ...y, value: val, realValue: val / cumInflation[i] };
+    });
+
+    variants.push({
+      productId: product.productId,
+      variantType: 'NO_IKE',
+      label: PRODUCT_SHORT[product.productId],
+      bondCount,
+      yearlyValues: noIkeYearlyFinal,
+      finalValueGross: noIkeTotalGross,
+      finalValue: noIkeAfterTax,
+      realValue: noIkeReal,
+      tax: noIkeTax,
+      redemptionCost: noIkeRedemption + withdrawnRedemptionFee,
+      withdrawnRedemptionFee,
+      withdrawnGross,
+      ikeCost: 0,
+      profit: noIkeAfterTax - capital,
+      returnPct: ((noIkeAfterTax - capital) / capital) * 100,
+    });
+
+    // --- IKE_MET variant ---
+    const ikeBaseYearly = yearly.map(y => ({ ...y }));
+    if (scaleFactor < 1 && w) {
+      for (let y = w.year; y <= horizon; y++) {
+        ikeBaseYearly[y] = { ...ikeBaseYearly[y], value: ikeBaseYearly[y].value * scaleFactor };
+      }
+    }
+
+    // IKE fees distributed proportionally based on total portfolio
+    const totalBondsForIke = activeProducts.reduce((s, p) => {
+      const pw = withdrawals && withdrawals[p.productId];
+      if (pw && pw.count > 0) return s + Math.max(0, p.count - pw.count);
+      return s + p.count;
+    }, 0);
+
+    const ikeYearly = applyIkeFeesToYearly(ikeBaseYearly, remainingBonds, totalBondsForIke, horizon, state.ikeAdditionalCosts || 0);
+    let ikeFinalRaw = ikeYearly[horizon].value;
+    const { finalValue: ikeAfterRedemption, redemptionCost: ikeRedemption } = applyEarlyRedemption(
+      ikeFinalRaw, product, remainingBonds, horizon, remainingBonds * 100
+    );
+
+    const ikeTotalGross = ikeAfterRedemption + withdrawnGross;
+    const productIkeCost = calculateIkeFees(totalBondsForIke, horizon, state.ikeAdditionalCosts || 0).total * (remainingBonds / Math.max(1, totalBondsForIke));
+
+    const ikeYearlyFinal = ikeYearly.map((y, i) => {
+      let val = y.value;
+      if (w && i >= w.year) val += withdrawnGross;
+      return { ...y, value: val, realValue: val / cumInflation[i] };
+    });
+
+    variants.push({
+      productId: product.productId,
+      variantType: 'IKE_MET',
+      label: PRODUCT_SHORT[product.productId] + ' (IKE)',
+      bondCount,
+      yearlyValues: ikeYearlyFinal,
+      finalValueGross: ikeTotalGross,
+      finalValue: ikeTotalGross,
+      realValue: ikeTotalGross / cumInflation[horizon],
+      tax: 0,
+      redemptionCost: ikeRedemption + withdrawnRedemptionFee,
+      withdrawnRedemptionFee,
+      withdrawnGross,
+      ikeCost: productIkeCost,
+      profit: ikeTotalGross - capital,
+      returnPct: ((ikeTotalGross - capital) / capital) * 100,
+    });
+  }
+
+  variants.sort((a, b) => b.finalValue - a.finalValue);
+
+  // "Do nothing" line — purchasing power decline
+  const doNothingLine = [{ year: 0, value: totalCapital }];
+  for (let y = 1; y <= horizon; y++) {
+    doNothingLine.push({ year: y, value: totalCapital / cumInflation[y] });
+  }
+
+  // Inflation accumulation line (how much you need to keep up)
+  const inflationLine = [{ year: 0, value: totalCapital }];
+  let cumI = 1;
+  for (let y = 1; y <= horizon; y++) {
+    cumI *= (1 + (indicators.inflation[y - 1] ?? 3.0) / 100);
+    inflationLine.push({ year: y, value: totalCapital * cumI });
+  }
+
+  const insights = generateInsights(variants, state, totalCapital, cumInflation, indicators);
+
+  const noIkeVariants = variants.filter(v => v.variantType === 'NO_IKE');
+  const ikeVariants = variants.filter(v => v.variantType === 'IKE_MET');
+  const bestNoIke = noIkeVariants[0];
+  const bestIke = ikeVariants[0];
+  const best = variants[0];
+
+  const summary = {
+    totalCapital,
+    totalBonds,
+    bestVariant: best,
+    bestFinalValue: best ? best.finalValue : totalCapital,
+    bestRealValue: best ? best.realValue : totalCapital,
+    bestProfit: best ? best.profit : 0,
+    bestTax: best ? best.tax : 0,
+    ikeBenefit: (bestIke && bestNoIke) ? bestIke.finalValue - bestNoIke.finalValue : 0,
+  };
+
+  return { summary, variants, inflationLine, doNothingLine, cumInflation, indicators, insights, horizon };
+}
+
+// ============================================================
+// SHARED STYLES
+// ============================================================
+
+const cardStyle = {
+  background: 'var(--surface)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: '1.75rem 2rem',
+};
+
+const btnPrimaryStyle = {
+  background: 'var(--accent)', color: '#fff', border: 'none',
+  borderRadius: 'var(--radius-sm)', padding: '12px 28px', fontSize: '0.95rem',
+  fontWeight: 500, cursor: 'pointer', minHeight: '44px', fontFamily: 'inherit',
+  transition: 'opacity 0.2s ease',
+};
+
+const btnSecondaryStyle = {
+  background: 'transparent', color: 'var(--text-2)', border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-sm)', padding: '12px 20px', cursor: 'pointer',
+  fontFamily: 'inherit', transition: 'all 0.2s ease', fontSize: '0.95rem',
+};
+
+const btnCircleStyle = {
+  width: '40px', height: '40px', borderRadius: '50%', border: '1.5px solid var(--border)',
+  background: 'var(--surface)', cursor: 'pointer', fontSize: '1.25rem', display: 'flex',
+  alignItems: 'center', justifyContent: 'center', color: 'var(--text)', fontFamily: 'inherit',
+  transition: 'all 0.2s ease',
+};
+
+const inputBaseStyle = {
+  border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)',
+  padding: '10px 14px', fontSize: '1rem', fontFamily: 'inherit',
+  background: 'var(--surface)', outline: 'none', width: '100%',
+  transition: 'border-color 0.2s ease',
+};
+
+const thStyle = { textAlign: 'left', padding: '8px 4px', borderBottom: '2px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-3)', fontWeight: 500 };
+const tdStyle = { padding: '6px 4px', borderBottom: '1px solid var(--border)' };
+
+// ============================================================
+// TOOLTIP — popup chmurka (click to open/close)
+// ============================================================
+
+function TooltipInfo({ text, variant }) {
+  const [open, setOpen] = React.useState(false);
+  const btnRef = React.useRef(null);
+  const tipRef = React.useRef(null);
+  const [tipStyle, setTipStyle] = React.useState(null);
+  const isWarning = variant === 'warning';
+
+  React.useEffect(() => {
+    if (!open) return;
+    if (btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const tipW = 280;
+      let left = rect.left + rect.width / 2 - tipW / 2;
+      left = Math.max(8, Math.min(left, window.innerWidth - tipW - 8));
+      const spaceAbove = rect.top;
+      const showBelow = spaceAbove < 120;
+      setTipStyle({
+        position: 'fixed',
+        left: left + 'px',
+        width: tipW + 'px',
+        ...(showBelow
+          ? { top: (rect.bottom + 8) + 'px' }
+          : { top: (rect.top - 8) + 'px', transform: 'translateY(-100%)' }),
+        zIndex: 10000,
+      });
+    }
+    const handleClickOutside = (e) => {
+      if (btnRef.current && !btnRef.current.contains(e.target) &&
+          tipRef.current && !tipRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open]);
+
+  const bgClosed = isWarning ? 'var(--warning-light)' : 'var(--surface-2)';
+  const borderClosed = isWarning ? '1px solid var(--warning)' : '1px solid var(--border)';
+  const colorClosed = isWarning ? 'var(--warning)' : 'var(--text-3)';
+
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}>
+      <button ref={btnRef} onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: '16px', height: '16px', borderRadius: '50%',
+          background: open ? (isWarning ? 'var(--warning)' : 'var(--accent)') : bgClosed,
+          border: open ? (isWarning ? '1px solid var(--warning)' : '1px solid var(--accent)') : borderClosed,
+          fontSize: '0.6rem', color: open ? '#fff' : colorClosed,
+          cursor: 'pointer', marginLeft: '4px', fontWeight: 700,
+          fontFamily: 'inherit', padding: 0, lineHeight: 1,
+          transition: 'all 0.15s ease',
+        }}>
+        {isWarning ? '!' : '?'}
+      </button>
+      {open && tipStyle && (
+        <div ref={tipRef} style={{
+          ...tipStyle,
+          background: isWarning ? 'var(--warning)' : 'var(--text)', color: '#fff',
+          padding: '10px 14px', borderRadius: 'var(--radius-sm)',
+          fontSize: '0.78rem', lineHeight: 1.55,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.15)', fontWeight: 400,
+          pointerEvents: 'auto', wordBreak: 'break-word', overflowWrap: 'break-word',
+          whiteSpace: 'normal', boxSizing: 'border-box',
+        }}>
+          {text}
+        </div>
+      )}
+    </span>
+  );
+}
+
+// ============================================================
+// PRIMITIVE COMPONENTS
+// ============================================================
+
+function NumericInput({ value, onChange, min = 1, max = 1000000, step = 1, label }) {
+  const handleDec = () => onChange(Math.max(min, value - step));
+  const handleInc = () => onChange(Math.min(max, value + step));
+  const handleChange = (e) => {
+    const v = parseInt(e.target.value);
+    if (!isNaN(v)) onChange(clamp(v, min, max));
+    else if (e.target.value === '') onChange(min);
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      {label && <span style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginRight: '0.5rem' }}>{label}</span>}
+      <button onClick={handleDec} style={btnCircleStyle} title="Zmniejsz">{'\u2212'}</button>
+      <input type="number" value={value} onChange={handleChange} min={min} max={max} step={step}
+        style={{ ...inputBaseStyle, width: '100px', textAlign: 'center', fontSize: '1.25rem', fontWeight: 600 }} />
+      <button onClick={handleInc} style={btnCircleStyle} title="Zwiększ">+</button>
+    </div>
+  );
+}
+
+function PercentageInput({ value, onChange, min = 0, max = 50, compact = false }) {
+  const handleChange = (e) => {
+    const raw = e.target.value.replace(',', '.');
+    if (raw === '' || raw === '-') { onChange(0); return; }
+    const v = parseFloat(raw);
+    if (!isNaN(v)) onChange(clamp(v, min, max));
+  };
+  return (
+    <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <input type="text" value={String(value).replace('.', ',')} onChange={handleChange}
+        style={{ ...inputBaseStyle, width: compact ? '70px' : '90px', paddingRight: '24px',
+          textAlign: 'right', fontSize: compact ? '0.85rem' : '1rem',
+          padding: compact ? '6px 24px 6px 8px' : '10px 24px 10px 14px' }} />
+      <span style={{ position: 'absolute', right: '10px', color: 'var(--text-3)', fontSize: compact ? '0.8rem' : '0.9rem', pointerEvents: 'none' }}>%</span>
+    </div>
+  );
+}
+
+function SegmentedControl({ options, value, onChange, helpTexts }) {
+  const [hoveredHelp, setHoveredHelp] = React.useState(null);
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'inline-flex', background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)', padding: '3px', border: '1px solid var(--border)' }}>
+        {options.map(opt => (
+          <button key={opt.value} onClick={() => onChange(opt.value)}
+            onMouseEnter={() => helpTexts && helpTexts[opt.value] && setHoveredHelp(opt.value)}
+            onMouseLeave={() => setHoveredHelp(null)}
+            style={{
+              padding: '6px 14px', fontSize: '0.8rem', fontWeight: value === opt.value ? 600 : 400,
+              border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'inherit',
+              background: value === opt.value ? 'var(--surface)' : 'transparent',
+              color: value === opt.value ? 'var(--text)' : 'var(--text-3)',
+              boxShadow: value === opt.value ? 'var(--shadow)' : 'none',
+              transition: 'all 0.2s ease', whiteSpace: 'nowrap',
+            }}>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+      {hoveredHelp && helpTexts && helpTexts[hoveredHelp] && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: '6px', zIndex: 50,
+          background: 'var(--text)', color: '#fff', padding: '10px 14px', borderRadius: 'var(--radius-sm)',
+          fontSize: '0.78rem', lineHeight: 1.55, maxWidth: '320px', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+        }}>
+          {helpTexts[hoveredHelp]}
+          <div style={{
+            position: 'absolute', bottom: '100%', left: '20px',
+            width: 0, height: 0, borderLeft: '6px solid transparent',
+            borderRight: '6px solid transparent', borderBottom: '6px solid var(--text)',
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToggleSwitch({ checked, onChange }) {
+  return (
+    <button onClick={() => onChange(!checked)}
+      style={{
+        width: '44px', height: '24px', borderRadius: '12px', border: 'none', padding: '2px',
+        background: checked ? 'var(--accent)' : 'var(--border)', cursor: 'pointer',
+        position: 'relative', transition: 'background 0.2s ease', flexShrink: 0,
+      }}>
+      <div style={{
+        width: '20px', height: '20px', borderRadius: '50%', background: '#fff',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.15)', transition: 'transform 0.2s ease',
+        transform: checked ? 'translateX(20px)' : 'translateX(0)',
+      }} />
+    </button>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.75rem', fontWeight: 500 }}>
+      {children}
+    </div>
+  );
+}
+
+function Tag({ children, color }) {
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem',
+      background: color ? color + '18' : 'var(--surface-2)',
+      color: color || 'var(--text-3)',
+      border: '1px solid ' + (color ? color + '30' : 'var(--border)'),
+    }}>
+      {children}
+    </span>
+  );
+}
+
+function KPICard({ label, value, color, suffix, helpText }) {
+  return (
+    <div style={{ ...cardStyle, padding: '1rem 1.25rem', transition: 'box-shadow 0.2s ease' }}>
+      <div style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>
+        {label}
+        {helpText && <TooltipInfo text={helpText} />}
+      </div>
+      <div style={{ fontSize: '1.25rem', fontWeight: 600, color: color || 'var(--text)' }}>{value}</div>
+      {suffix && <div style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{suffix}</div>}
+    </div>
+  );
+}
+
+// ============================================================
+// STEPPER
+// ============================================================
+
+function Stepper({ step, maxReached, onStepClick }) {
+  return (
+    <div className="stepper-wrap" style={{ marginBottom: '2rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0', justifyContent: 'center' }}>
+        {STEP_LABELS.map((label, i) => {
+          const isActive = i === step;
+          const isDone = i < step && i <= maxReached;
+          const isClickable = i <= maxReached;
+          return (
+            <React.Fragment key={i}>
+              {i > 0 && <div style={{ width: '32px', height: '2px', background: isDone || isActive ? 'var(--accent)' : 'var(--border)', flexShrink: 0 }} />}
+              <button onClick={() => isClickable && onStepClick(i)}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                  background: 'none', border: 'none', cursor: isClickable ? 'pointer' : 'default',
+                  padding: '4px 8px', fontFamily: 'inherit', opacity: isClickable ? 1 : 0.5,
+                }}>
+                <div style={{
+                  width: '28px', height: '28px', borderRadius: '50%', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 600,
+                  background: isActive ? 'var(--accent)' : isDone ? 'var(--success)' : 'var(--surface-2)',
+                  color: isActive || isDone ? '#fff' : 'var(--text-3)',
+                  border: isActive ? 'none' : isDone ? 'none' : '1.5px solid var(--border)',
+                  transition: 'all 0.2s ease',
+                }}>
+                  {isDone && !isActive ? '\u2713' : i + 1}
+                </div>
+                <span style={{
+                  fontSize: '0.7rem', color: isActive ? 'var(--accent)' : isDone ? 'var(--success)' : 'var(--text-3)',
+                  fontWeight: isActive ? 600 : 400, whiteSpace: 'nowrap',
+                }}>{label}</span>
+              </button>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Header() {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', padding: '0.75rem 0' }}>
+      <div style={{ fontFamily: "'DM Serif Display', serif", fontSize: '1.25rem', color: 'var(--text)' }}>
+        Obligacje PL
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// STEP 0: START VIEW — informational
+// ============================================================
+
+function StartView({ onNext }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem' }}>
+
+      {/* Hero */}
+      <div style={{ textAlign: 'center', maxWidth: '640px' }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: '2rem', marginBottom: '0.5rem', lineHeight: 1.2 }}>
+          Kalkulator obligacji skarbowych
+        </h1>
+        <p style={{ color: 'var(--text-2)', fontSize: '0.95rem', lineHeight: 1.6 }}>
+          Porównaj polskie obligacje detaliczne, zbuduj własny portfel oszczędności
+          i sprawdź ile realnie możesz zyskać — po inflacji, podatku i kosztach IKE.
+        </p>
+      </div>
+
+      {/* CTA — above cards */}
+      <div style={{ maxWidth: '640px', width: '100%', textAlign: 'center' }}>
+        <button onClick={onNext} style={{ ...btnPrimaryStyle, padding: '14px 40px', fontSize: '1rem' }}
+          onMouseOver={e => e.currentTarget.style.opacity = '0.9'}
+          onMouseOut={e => e.currentTarget.style.opacity = '1'}>
+          Zacznij konfigurację
+        </button>
+      </div>
+ {/* Who is it for */}
+      <div style={{ ...cardStyle, maxWidth: '640px', width: '100%' }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>Dla kogo jest ten kalkulator?</div>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', lineHeight: 1.7 }}>
+          Dla osób, które chcą świadomie zarządzać oszczędnościami. Jeśli zastanawiasz się czy obligacje
+          to lepszy wybór niż lokata, które typy wybrać przy danym horyzoncie, i czy IKE się opłaca —
+          ten kalkulator pokaże Ci konkretne liczby oparte o aktualne parametry z obligacjeskarbowe.pl.
+        </div>
+      </div>
+      {/* How it works */}
+      <div style={{ ...cardStyle, maxWidth: '640px', width: '100%' }}>
+        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.75rem' }}>Jak działa kalkulator?</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {[
+            { step: '1', title: 'Wybierz czas oszczędzania i obligacje', desc: 'Określ na ile lat chcesz oszczędzać i które obligacje chcesz kupić — np. 50 sztuk EDO i 30 sztuk COI.' },
+            { step: '2', title: 'Ustaw scenariusz makroekonomiczny', desc: 'Wybierz warunki makroekonomiczne — inflację, stopy procentowe. Możesz użyć gotowego scenariusza lub wpisać ręcznie.' },
+            { step: '3', title: 'Poznaj IKE-Obligacje', desc: 'Dowiedz się jak Indywidualne Konto Emerytalne wpływa na Twoje zyski. W wynikach przełącz IKE ON/OFF.' },
+            { step: '4', title: 'Zobacz wyniki', desc: 'Wykres, ranking i konkretne kwoty — nominalnie i realnie (po inflacji). Porównaj z lokatą i kontem oszczędnościowym.' },
+          ].map((item, i) => (
+            <div key={i} style={{ display: 'flex', gap: '0.75rem' }}>
+              <div style={{
+                width: '28px', height: '28px', borderRadius: '50%', display: 'flex',
+                alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700,
+                background: 'var(--accent)', color: '#fff', flexShrink: 0, marginTop: '2px',
+              }}>{item.step}</div>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: '2px' }}>{item.title}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', lineHeight: 1.5 }}>{item.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      
+
+     
+
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginTop: '0.5rem', lineHeight: 1.5, textAlign: 'center' }}>
+        Dane obligacji z oferty marzec 2026 (obligacjeskarbowe.pl).
+        Wyniki mają charakter poglądowy i nie stanowią rekomendacji inwestycyjnej.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// STEP 1: PORTFOLIO VIEW — products + indicators combined
+// ============================================================
+
+function PortfolioView({ state, setState, onNext, onBack }) {
+  const [phase, setPhase] = React.useState('products');
+  const [showFloating, setShowFloating] = React.useState(false);
+  const headerRef = React.useRef(null);
+
+  // Show floating bar only when the header card scrolls out of view
+  React.useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowFloating(!entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const bonds = state.products.filter(p => !['LOK', 'KOS'].includes(p.productId));
+  const refs = state.products.filter(p => ['LOK', 'KOS'].includes(p.productId));
+  const bondsTotal = bonds.reduce((s, p) => s + (p.count || 0), 0);
+  const totalBonds = state.products.reduce((s, p) => s + (p.count || 0), 0);
+  const totalCapital = totalBonds * 100;
+  const horizon = state.horizon;
+  const activeProducts = state.products.filter(p => (p.count || 0) > 0);
+  const activeBonds = bonds.filter(p => (p.count || 0) > 0);
+  const activeRefs = refs.filter(p => (p.count || 0) > 0);
+
+  // Auto-sync LOK/KOS count to match total bond count
+  React.useEffect(() => {
+    let needsUpdate = false;
+    const newProducts = state.products.map(p => {
+      if (!['LOK', 'KOS'].includes(p.productId)) return p;
+      if ((p.count || 0) <= 0) return p;
+      const target = bondsTotal > 0 ? bondsTotal : 0;
+      if (p.count !== target) { needsUpdate = true; return { ...p, count: target }; }
+      return p;
+    });
+    if (needsUpdate) setState(prev => ({ ...prev, products: newProducts }));
+  }, [bondsTotal]);
+
+  // --- Product helpers ---
+  const updateCount = (idx, count) => {
+    setState(prev => ({
+      ...prev,
+      products: prev.products.map((p, i) => i === idx ? { ...p, count: Math.max(0, count) } : p),
+    }));
+  };
+
+  const updateFixedRate = (idx, rate) => {
+    setState(prev => ({
+      ...prev,
+      products: prev.products.map((p, i) => i === idx ? { ...p, fixedRate: rate, initialRate: rate } : p),
+    }));
+  };
+
+  const toggleRef = (productId, on) => {
+    setState(prev => ({
+      ...prev,
+      products: prev.products.map(p =>
+        p.productId === productId ? { ...p, count: on ? Math.max(bondsTotal, 1) : 0 } : p
+      ),
+    }));
+  };
+
+  const getEarlyRedemptionWarning = (product) => {
+    if (!product.maturityMonths) return null;
+    const matYears = product.maturityMonths / 12;
+    if (horizon < matYears) {
+      return `Twój horyzont oszczędzania (${pluralYears(horizon)}) jest krótszy niż zapadalność obligacji (${pluralYears(matYears)}). Przy wcześniejszym wykupie zapłacisz ${product.earlyRedemptionFee} zł za każdą obligację. ${product.nominalProtection ? 'Ochrona nominalna gwarantuje zwrot co najmniej 100 zł minus opłata za wykup.' : ''}`;
+    }
+    return null;
+  };
+
+  const getCellValue = (product, key) => {
+    switch (key) {
+      case 'maturityMonths':
+        if (!product.maturityMonths) return '\u2014';
+        const y = product.maturityMonths / 12;
+        return y === 1 ? '1 rok' : y <= 4 ? y + ' lata' : y + ' lat';
+      case 'initialRate': return formatPct(product.initialRate);
+      case 'rateChangeMonths': return product.rateChangeMonths ? product.rateChangeMonths + ' mc' : '\u2014';
+      case 'indexLabel': return INDEX_LABELS[product.indexType] || '\u2014';
+      case 'margin': return product.margin > 0 ? '+' + formatPct(product.margin) : '\u2014';
+      case 'couponFrequencyMonths': return product.couponFrequencyMonths ? product.couponFrequencyMonths + ' mc' : '\u2014';
+      case 'capitalizationMonths': return product.capitalizationMonths ? product.capitalizationMonths + ' mc' : '\u2014';
+      case 'conversionPrice': return product.conversionPrice ? product.conversionPrice.toFixed(2) + ' zł' : '\u2014';
+      case 'earlyRedemptionFee': return product.earlyRedemptionFee > 0 ? product.earlyRedemptionFee.toFixed(2) + ' zł' : '\u2014';
+      case 'nominalProtectionMonths':
+        if (!product.nominalProtection) return 'Nie';
+        if (product.nominalProtectionMonths === 'full') return 'Pełny';
+        return product.nominalProtectionMonths ? product.nominalProtectionMonths + ' mc' : 'Tak';
+      default: return '\u2014';
+    }
+  };
+
+  // --- Indicator helpers ---
+  const applyPreset = (presetKey) => {
+    const adv = PRESET_ADVANCED[presetKey];
+    setState(prev => ({
+      ...prev,
+      preset: presetKey,
+      inflationByYear: [...adv.inflation],
+      nbpRateByYear: [...adv.nbpRate],
+      wibor6mByYear: [...adv.wibor6m],
+      depositRateByYear: [...adv.depositRate],
+      indicatorAfterYear12: { ...adv.after12 },
+    }));
+  };
+
+  const setSimpleValue = (key, arrayKey, value) => {
+    setState(prev => ({
+      ...prev,
+      [arrayKey]: Array(12).fill(value),
+      indicatorAfterYear12: { ...prev.indicatorAfterYear12, [key]: value },
+    }));
+  };
+
+  const switchIndicatorMode = (mode) => {
+    if (mode === state.indicatorMode) return;
+    if (mode === 'scenario') {
+      const presetKey = state.preset || 'bazowy';
+      const adv = PRESET_ADVANCED[presetKey];
+      setState(prev => ({
+        ...prev, indicatorMode: 'scenario', preset: presetKey,
+        inflationByYear: [...adv.inflation], nbpRateByYear: [...adv.nbpRate],
+        wibor6mByYear: [...adv.wibor6m], depositRateByYear: [...adv.depositRate],
+        indicatorAfterYear12: { ...adv.after12 },
+      }));
+    } else if (mode === 'simple') {
+      setState(prev => ({
+        ...prev, indicatorMode: 'simple',
+        inflationByYear: Array(12).fill(prev.inflationByYear[0]),
+        nbpRateByYear: Array(12).fill(prev.nbpRateByYear[0]),
+        wibor6mByYear: Array(12).fill(prev.wibor6mByYear[0]),
+        depositRateByYear: Array(12).fill(prev.depositRateByYear[0]),
+      }));
+    } else if (mode === 'advanced') {
+      if (state.indicatorMode === 'simple') {
+        const preset = PRESET_ADVANCED[state.preset || 'bazowy'];
+        setState(prev => ({
+          ...prev, indicatorMode: 'advanced',
+          inflationByYear: [...preset.inflation], nbpRateByYear: [...preset.nbpRate],
+          wibor6mByYear: [...preset.wibor6m], depositRateByYear: [...preset.depositRate],
+          indicatorAfterYear12: { ...preset.after12 },
+        }));
+      } else {
+        setState(prev => ({ ...prev, indicatorMode: 'advanced' }));
+      }
+    }
+  };
+
+  const indicatorItems = [
+    { label: 'Inflacja CPI', key: 'inflation', arrayKey: 'inflationByYear', tooltip: INDICATOR_TOOLTIPS.inflation },
+    { label: 'Stopa referencyjna NBP', key: 'nbpRate', arrayKey: 'nbpRateByYear', tooltip: INDICATOR_TOOLTIPS.nbpRate },
+    { label: 'WIBOR 6M', key: 'wibor6m', arrayKey: 'wibor6mByYear', tooltip: INDICATOR_TOOLTIPS.wibor6m },
+    { label: 'Lokata / Konto', key: 'depositRate', arrayKey: 'depositRateByYear', tooltip: INDICATOR_TOOLTIPS.depositRate },
+  ];
+
+  const getIndicatorRelevance = (key) => {
+    const indexMap = { inflation: 'inflation', nbpRate: 'nbp_ref', wibor6m: 'wibor6m' };
+    if (key === 'depositRate') {
+      const relevant = activeProducts.filter(p => ['LOK', 'KOS'].includes(p.productId));
+      return relevant.length > 0
+        ? { names: relevant.map(p => PRODUCT_SHORT[p.productId]).join(', '), desc: 'Oprocentowanie ustawione ręcznie' }
+        : null;
+    }
+    const indexType = indexMap[key];
+    const relevant = activeProducts.filter(p => p.indexType === indexType);
+    if (relevant.length === 0) return null;
+    const names = relevant.map(p => PRODUCT_SHORT[p.productId]).join(', ');
+    const descs = { inflation: 'Od 2. roku: inflacja + marża', nbpRate: 'Stopa NBP + marża', wibor6m: 'WIBOR 6M + marża' };
+    return { names, desc: descs[key] };
+  };
+
+  // ==============================
+  // RENDER
+  // ==============================
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+      {/* ═══ FLOATING SUMMARY — appears when header scrolls out of view ═══ */}
+      {showFloating && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200,
+          background: 'var(--surface)', borderBottom: '1px solid var(--border)',
+          boxShadow: 'var(--shadow-md)', padding: '0.4rem 1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: '1rem',
+        }}>
+          {/* Left: Obligacje + chips */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', flex: 1 }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>Obligacje:</span>
+            {activeBonds.length === 0 && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-3)' }}>brak</span>
+            )}
+            {activeBonds.map(p => (
+              <span key={p.productId} style={{
+                display: 'inline-block', padding: '1px 6px', borderRadius: '3px',
+                fontSize: '0.65rem', fontWeight: 600,
+                background: (PRODUCT_COLORS[p.productId] || 'var(--border)') + '18',
+                color: PRODUCT_COLORS[p.productId] || 'var(--text-3)',
+              }}>
+                {PRODUCT_SHORT[p.productId]}{'\u00D7'}{p.count}
+              </span>
+            ))}
+            {activeRefs.map(p => (
+              <span key={p.productId} style={{
+                display: 'inline-block', padding: '1px 6px', borderRadius: '3px',
+                fontSize: '0.65rem', fontWeight: 600,
+                background: (PRODUCT_COLORS[p.productId] || 'var(--border)') + '18',
+                color: PRODUCT_COLORS[p.productId] || 'var(--text-3)',
+              }}>
+                {PRODUCT_SHORT[p.productId]}
+              </span>
+            ))}
+          </div>
+          {/* Right: Wartość + Okres */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem', flexShrink: 0 }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '1rem', color: 'var(--text-3)', lineHeight: 2 }}>Wartość portfela</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--navy)', lineHeight: 1.2 }}>
+                {bondsTotal > 0 ? formatPLN(bondsTotal * 100) : '0 zł'}
+              </div>
+            </div>
+            <div style={{ width: '1px', height: '28px', background: 'var(--border)' }} />
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '1rem', color: 'var(--text-3)', lineHeight: 2 }}>Okres oszczędności</div>
+              <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--navy)', lineHeight: 1.2 }}>
+                {pluralYears(horizon)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ PORTFOLIO HEADER — horizon picker ═══ */}
+      <div ref={headerRef} style={{ ...cardStyle, padding: '1.25rem 1.5rem' }}>
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'stretch' }}>
+
+          {/* LEFT — portfolio value */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.3rem', fontWeight: 500 }}>
+              Wartość portfela
+            </div>
+            <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--navy)', lineHeight: 1, marginBottom: '0.6rem' }}>
+              {bondsTotal > 0 ? formatPLN(bondsTotal * 100) : '0 zł'}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+              {activeBonds.length === 0 && activeRefs.length === 0
+                ? <span style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>Brak obligacji w portfelu</span>
+                : <>
+                    {activeBonds.map(p => (
+                      <span key={p.productId} style={{
+                        display: 'inline-block', padding: '2px 7px', borderRadius: '4px',
+                        fontSize: '0.65rem', fontWeight: 600,
+                        background: (PRODUCT_COLORS[p.productId] || 'var(--border)') + '22',
+                        color: PRODUCT_COLORS[p.productId] || 'var(--text-3)',
+                        border: '1px solid ' + (PRODUCT_COLORS[p.productId] || 'var(--border)') + '44',
+                      }}>
+                        {PRODUCT_SHORT[p.productId]}{'\u00D7'}{p.count}
+                      </span>
+                    ))}
+                    {activeRefs.map(p => (
+                      <span key={p.productId} style={{
+                        display: 'inline-block', padding: '2px 7px', borderRadius: '4px',
+                        fontSize: '0.65rem', fontWeight: 500,
+                        background: 'var(--surface-2)',
+                        color: 'var(--text-3)',
+                        border: '1px solid var(--border)',
+                      }}>
+                        {PRODUCT_SHORT[p.productId]}
+                      </span>
+                    ))}
+                  </>
+              }
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: '1px', background: 'var(--border)', flexShrink: 0, alignSelf: 'stretch' }} />
+
+          {/* RIGHT — horizon */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '0.7rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.3rem', fontWeight: 500 }}>
+              Okres oszczędzania
+            </div>
+            <div style={{ fontSize: '1.6rem', fontWeight: 700, color: 'var(--navy)', lineHeight: 1, marginBottom: '0.6rem' }}>
+              {pluralYears(horizon)}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>1</span>
+              <input type="range" min={1} max={50} step={1} value={horizon}
+                onChange={e => setState(prev => ({ ...prev, horizon: parseInt(e.target.value) }))}
+                style={{ flex: 1, height: '6px', appearance: 'none', background: 'var(--border)', borderRadius: '3px', outline: 'none', cursor: 'pointer', accentColor: 'var(--accent)' }} />
+              <span style={{ fontSize: '0.72rem', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>50 lat</span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════
+           PHASE: PRODUCTS
+         ═══════════════════════════════════════════ */}
+      {phase === 'products' && (
+        <>
+          {/* --- Bond products table --- */}
+          {(() => {
+            const KEY_COL_KEYS = ['maturityMonths', 'initialRate', 'indexLabel', 'margin', 'earlyRedemptionFee'];
+            const tableExpanded = state.portfolioWide;
+            const visibleCols = tableExpanded
+              ? PRODUCT_TABLE_COLUMNS
+              : PRODUCT_TABLE_COLUMNS.filter(c => KEY_COL_KEYS.includes(c.key));
+
+            return (
+              <div style={{ ...cardStyle, padding: '1.5rem 0 1.5rem 1.25rem', position: 'relative', overflow: 'hidden' }}>
+                {/* Card header */}
+                <div style={{ marginBottom: '1rem', paddingRight: '3.5rem' }}>
+                  <SectionLabel>Obligacje skarbowe</SectionLabel>
+                </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginBottom: '1rem', lineHeight: 1.5, paddingRight: '3.5rem' }}>
+  
+  <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+    Czym są obligacje skarbowe?
+  </div>
+
+  <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', lineHeight: 1.7 }}>
+    Obligacje skarbowe to papiery wartościowe emitowane przez Skarb Państwa. Kupujesz je po 100 zł za sztukę.
+    Państwo pożycza od Ciebie pieniądze i oddaje je z odsetkami po określonym czasie.
+    Są uważane za jedną z najbezpieczniejszych form oszczędzania — gwarantem jest budżet państwa.
+    Dostępne typy różnią się oprocentowaniem, długością trwania i sposobem naliczania odsetek.
+  </div>
+
+  <div style={{ 
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    marginTop: '1rem',
+    marginBottom: '1rem'
+  }}>
+    Wybierz obligacje do swojego portfela:
+  </div>
+
+</div>
+
+                {/* Table */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginRight: '3.5rem' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ ...thStyle, position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 2, minWidth: '120px', padding: '10px 6px' }}>
+                          Obligacja
+                        </th>
+                        <th style={{ ...thStyle, minWidth: '80px', textAlign: 'center', padding: '10px 4px' }}>Ile szt.</th>
+                        {visibleCols.map(col => (
+                          <th key={col.key} style={{ ...thStyle, whiteSpace: 'nowrap', padding: '10px 5px', fontSize: '0.72rem' }}>
+                            <span>{col.label}</span>
+                            {col.tooltip && <TooltipInfo text={col.tooltip} />}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bonds.map(product => {
+                        const idx = state.products.findIndex(p => p.productId === product.productId);
+                        const warning = getEarlyRedemptionWarning(product);
+                        const color = PRODUCT_COLORS[product.productId] || 'var(--text-3)';
+                        const hasCount = (product.count || 0) > 0;
+                        return (
+                          <tr key={product.productId} style={{
+                            background: hasCount ? 'var(--surface)' : 'var(--surface-2)',
+                            opacity: hasCount ? 1 : 0.7, transition: 'all 0.2s ease',
+                          }}>
+                            <td style={{
+                              ...tdStyle, position: 'sticky', left: 0, zIndex: 1, padding: '8px 6px',
+                              background: hasCount ? 'var(--surface)' : 'var(--surface-2)',
+                              borderLeft: `3px solid ${hasCount ? color : 'var(--border)'}`,
+                            }}>
+                              <div style={{ fontWeight: 600, color, fontSize: '0.82rem' }}>
+                                {PRODUCT_SHORT[product.productId]}
+                              </div>
+                              <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', lineHeight: 1.3 }}>
+                                {PRODUCT_DESCRIPTIONS[product.productId]?.split('.')[0]}.
+                              </div>
+                              {['ROS', 'ROD'].includes(product.productId) && (
+                                <div style={{ fontSize: '0.6rem', color: 'var(--success)', fontWeight: 500 }}>Rodzina 800+</div>
+                              )}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: 'center', padding: '8px 4px' }}>
+                              <input type="number" value={product.count || 0} min={0} max={100000}
+                                onChange={e => { const v = parseInt(e.target.value); updateCount(idx, isNaN(v) ? 0 : v); }}
+                                onFocus={e => e.target.select()}
+                                style={{
+                                  ...inputBaseStyle, width: '66px', textAlign: 'center', padding: '5px 4px',
+                                  fontSize: '0.82rem', fontWeight: hasCount ? 700 : 400,
+                                  borderColor: hasCount ? color : 'var(--border)',
+                                }} />
+                              {hasCount && (
+                                <div style={{ fontSize: '0.6rem', color: 'var(--text-3)', marginTop: '2px' }}>
+                                  {formatPLN(product.count * 100)}
+                                </div>
+                              )}
+                            </td>
+                            {visibleCols.map(col => {
+                              const isEarlyFee = col.key === 'earlyRedemptionFee' && warning && hasCount;
+                              return (
+                                <td key={col.key} style={{
+                                  ...tdStyle, whiteSpace: 'nowrap', padding: '8px 5px', fontSize: '0.75rem',
+                                  color: isEarlyFee ? 'var(--warning)' : undefined,
+                                  fontWeight: isEarlyFee ? 600 : undefined,
+                                }}>
+                                  {getCellValue(product, col.key)}
+                                  {isEarlyFee && <TooltipInfo text={warning} variant="warning" />}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* ─── Expand / Collapse handle on right edge ─── */}
+                <button
+                  onClick={() => setState(prev => ({ ...prev, portfolioWide: !tableExpanded }))}
+                  title={tableExpanded ? 'Zwiń kolumny' : 'Rozwiń wszystkie parametry'}
+                  style={{
+                    position: 'absolute', top: 0, right: 0, bottom: 0, width: '3rem',
+                    background: tableExpanded ? 'var(--accent-light)' : 'var(--surface-2)',
+                    borderLeft: '1px solid var(--border)',
+                    borderRadius: '0 var(--radius) var(--radius) 0',
+                    border: 'none', cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                    transition: 'background 0.2s ease',
+                    padding: '1rem 0',
+                  }}
+                  onMouseOver={e => e.currentTarget.style.background = tableExpanded ? '#f0e4dc' : 'var(--border)'}
+                  onMouseOut={e => e.currentTarget.style.background = tableExpanded ? 'var(--accent-light)' : 'var(--surface-2)'}
+                >
+                  {/* Arrow icon */}
+                  <span style={{
+                    fontSize: '0.8rem', color: tableExpanded ? 'var(--accent)' : 'var(--text-3)',
+                    transition: 'transform 0.2s ease',
+                    transform: tableExpanded ? 'rotate(0deg)' : 'rotate(0deg)',
+                  }}>
+                    {tableExpanded ? '\u00AB' : '\u00BB'}
+                  </span>
+                  {/* Vertical label */}
+                  <span style={{
+                    writingMode: 'vertical-rl',
+                    textOrientation: 'mixed',
+                    transform: 'rotate(180deg)',
+                    fontSize: '0.62rem',
+                    fontWeight: 600,
+                    letterSpacing: '0.08em',
+                    color: tableExpanded ? 'var(--accent)' : 'var(--text-3)',
+                    textTransform: 'uppercase',
+                    fontFamily: 'inherit',
+                  }}>
+                    {tableExpanded ? 'Zwiń' : 'Wszystkie parametry'}
+                  </span>
+                </button>
+              </div>
+            );
+          })()}
+
+          {/* --- Reference products (AFTER bonds) --- */}
+          <div style={cardStyle}>
+            <SectionLabel>Produkty referencyjne</SectionLabel>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginBottom: '1rem', lineHeight: 1.5 }}>
+              Pozwalają porównać obligacje z popularnymi formami oszczędzania w banku. 
+              Po aktywacji kwota jest automatycznie taka sama jak w portfelu obligacji,
+              a oprocentowanie możesz dostosować do własnej oferty.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {refs.map(product => {
+                const idx = state.products.findIndex(p => p.productId === product.productId);
+                const isOn = (product.count || 0) > 0;
+                const color = PRODUCT_COLORS[product.productId] || 'var(--text-3)';
+                return (
+                  <div key={product.productId} style={{
+                    display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem 1rem',
+                    background: isOn ? 'var(--surface)' : 'var(--surface-2)',
+                    borderRadius: 'var(--radius-sm)',
+                    border: isOn ? '1.5px solid ' + color + '40' : '1.5px solid var(--border)',
+                    opacity: isOn ? 1 : 0.7, transition: 'all 0.2s ease',
+                  }}>
+                    <ToggleSwitch checked={isOn} onChange={v => toggleRef(product.productId, v)} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.85rem', color }}>{PRODUCT_SHORT[product.productId]}</div>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', lineHeight: 1.3 }}>
+                        {PRODUCT_DESCRIPTIONS[product.productId]?.split('.')[0]}.
+                      </div>
+                    </div>
+                    {isOn && (
+                      <div style={{ flexShrink: 0 }}>
+                        <div style={{ fontSize: '0.65rem', color: 'var(--text-3)', marginBottom: '2px' }}>Oprocentowanie</div>
+                        <PercentageInput compact value={product.fixedRate || product.initialRate}
+                          onChange={v => updateFixedRate(idx, v)} min={0} max={20} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Validation */}
+          {bondsTotal === 0 && (
+            <div style={{ ...cardStyle, background: 'var(--warning-light)', borderColor: 'var(--warning)', textAlign: 'center', padding: '1rem' }}>
+              <p style={{ color: 'var(--warning)', fontWeight: 500, fontSize: '0.85rem' }}>
+                Wpisz liczbę obligacji przy co najmniej jednym produkcie żeby kontynuować.
+              </p>
+            </div>
+          )}
+
+          {/* Products → Indicators button */}
+          <div className="btn-row" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <button onClick={onBack} style={btnSecondaryStyle}>{'\u2190'} Wróć</button>
+            <button onClick={() => setPhase('indicators')} disabled={bondsTotal === 0}
+              style={{ ...btnPrimaryStyle, opacity: bondsTotal === 0 ? 0.5 : 1, cursor: bondsTotal === 0 ? 'not-allowed' : 'pointer' }}
+              onMouseOver={e => { if (bondsTotal > 0) e.currentTarget.style.opacity = '0.9'; }}
+              onMouseOut={e => { if (bondsTotal > 0) e.currentTarget.style.opacity = '1'; }}>
+              {'Przejdź do wskaźników \u2192'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ═══════════════════════════════════════════
+           PHASE: INDICATORS
+         ═══════════════════════════════════════════ */}
+      {phase === 'indicators' && (
+        <>
+          {/* Collapsed products */}
+          <div style={{
+            ...cardStyle, padding: '0.75rem 1.25rem',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem',
+          }}>
+            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-3)', marginRight: '0.25rem' }}>Produkty:</span>
+              {activeBonds.map(p => (
+                <span key={p.productId} style={{
+                  padding: '1px 6px', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 600,
+                  background: (PRODUCT_COLORS[p.productId] || 'var(--border)') + '18',
+                  color: PRODUCT_COLORS[p.productId] || 'var(--text-3)',
+                }}>
+                  {PRODUCT_SHORT[p.productId]}{'\u00D7'}{p.count}
+                </span>
+              ))}
+              {activeRefs.map(p => (
+                <span key={p.productId} style={{
+                  padding: '1px 6px', borderRadius: '3px', fontSize: '0.65rem', fontWeight: 600,
+                  background: (PRODUCT_COLORS[p.productId] || 'var(--border)') + '18',
+                  color: PRODUCT_COLORS[p.productId] || 'var(--text-3)',
+                }}>
+                  {PRODUCT_SHORT[p.productId]}
+                </span>
+              ))}
+            </div>
+            <button onClick={() => setPhase('products')}
+              style={{ ...btnSecondaryStyle, padding: '4px 12px', fontSize: '0.75rem' }}>
+              Edytuj produkty
+            </button>
+          </div>
+
+          {/* Indicator mode selector */}
+          <div style={cardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <SectionLabel>Scenariusz makroekonomiczny</SectionLabel>
+              <SegmentedControl
+                options={[
+                  { value: 'simple', label: 'Uproszczona' },
+                  { value: 'scenario', label: 'Scenariusze' },
+                  { value: 'advanced', label: 'Zaawansowana' },
+                ]}
+                value={state.indicatorMode}
+                onChange={switchIndicatorMode}
+                helpTexts={{
+                  simple: 'Jedna wartość każdego wskaźnika na wszystkie lata.',
+                  scenario: 'Gotowe scenariusze — wartości narzucone, bez edycji.',
+                  advanced: 'Pełna kontrola — wpisz wartości na każdy rok osobno.',
+                }}
+              />
+            </div>
+
+            {/* --- SCENARIO MODE --- */}
+            {state.indicatorMode === 'scenario' && (
+              <>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                  {Object.entries(PRESETS).map(([key, p]) => (
+                    <button key={key} onClick={() => applyPreset(key)}
+                      style={{
+                        padding: '8px 16px', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem',
+                        fontFamily: 'inherit', cursor: 'pointer', transition: 'all 0.2s ease', fontWeight: 500,
+                        background: state.preset === key ? 'var(--accent-light)' : 'var(--surface-2)',
+                        color: state.preset === key ? 'var(--accent)' : 'var(--text-2)',
+                        border: state.preset === key ? '1.5px solid var(--accent)' : '1.5px solid var(--border)',
+                      }}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+                {state.preset && PRESET_DESCRIPTIONS[state.preset] && (
+                  <div style={{
+                    background: 'var(--accent-light)', borderRadius: 'var(--radius-sm)',
+                    padding: '0.75rem 1rem', fontSize: '0.8rem', color: 'var(--accent-dark)', lineHeight: 1.5,
+                    borderLeft: '3px solid var(--accent)', marginBottom: '1rem',
+                  }}>
+                    {PRESET_DESCRIPTIONS[state.preset]}
+                  </div>
+                )}
+
+                {/* Read-only scenario values summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                  {indicatorItems.map(item => {
+                    const first = state[item.arrayKey][0];
+                    const last = state[item.arrayKey][Math.min(11, horizon - 1)];
+                    const after = state.indicatorAfterYear12[item.key];
+                    const relevance = getIndicatorRelevance(item.key);
+                    return (
+                      <div key={item.key} style={{
+                        padding: '0.75rem', background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)',
+                        borderLeft: relevance ? '3px solid var(--success)' : '3px solid var(--border)',
+                      }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                          {item.label}
+                          <TooltipInfo text={item.tooltip} />
+                        </div>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>
+                          {formatPct(first)}{first !== last ? ` ${'\u2192'} ${formatPct(last)}` : ''}
+                          {horizon > 12 && <span style={{ fontSize: '0.75rem', color: 'var(--text-3)', fontWeight: 400 }}> (po 12: {formatPct(after)})</span>}
+                        </div>
+                        {relevance && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--success)', marginTop: '0.25rem' }}>
+                            {'Wpływa na: '}{relevance.names}{' \u2014 '}{relevance.desc}
+                          </div>
+                        )}
+                        {!relevance && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '0.25rem' }}>
+                            Brak produktów w portfelu opartych o ten wskaźnik
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* --- SIMPLE MODE --- */}
+            {state.indicatorMode === 'simple' && (
+              <div className="assumptions-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                {indicatorItems.map(item => {
+                  const relevance = getIndicatorRelevance(item.key);
+                  return (
+                    <div key={item.key}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: '0.25rem' }}>
+                        {item.label}
+                        <TooltipInfo text={item.tooltip} />
+                      </div>
+                      <PercentageInput value={state[item.arrayKey][0]} onChange={v => setSimpleValue(item.key, item.arrayKey, v)} />
+                      {relevance && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--success)', marginTop: '0.35rem' }}>
+                          {'Wpływa na: '}{relevance.names}{' \u2014 '}{relevance.desc}
+                        </div>
+                      )}
+                      {!relevance && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '0.35rem' }}>
+                          Brak produktów w portfelu opartych o ten wskaźnik
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* --- ADVANCED MODE --- */}
+            {state.indicatorMode === 'advanced' && (
+              <>
+                {/* Relevance summary */}
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                  {indicatorItems.map(item => {
+                    const relevance = getIndicatorRelevance(item.key);
+                    return relevance ? (
+                      <span key={item.key} style={{
+                        padding: '3px 10px', borderRadius: '4px', fontSize: '0.7rem',
+                        background: 'var(--success-light)', color: 'var(--success)',
+                        border: '1px solid var(--success)',
+                      }}>
+                        {item.label} {'\u2192'} {relevance.names}
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+                <AdvancedIndicatorTable state={state} setState={setState} />
+              </>
+            )}
+          </div>
+
+          {/* Navigation */}
+          <div className="btn-row" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <button onClick={() => setPhase('products')} style={btnSecondaryStyle}>
+              {'\u2190 Wróć do produktów'}
+            </button>
+            <button onClick={onNext} style={btnPrimaryStyle}
+              onMouseOver={e => e.currentTarget.style.opacity = '0.9'}
+              onMouseOut={e => e.currentTarget.style.opacity = '1'}>
+              {'Dalej \u2192'}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ADVANCED INDICATOR TABLE (per-year editable)
+// ============================================================
+
+function AdvancedIndicatorTable({ state, setState }) {
+  const [fillMode, setFillMode] = React.useState(null);
+  const [fillTarget, setFillTarget] = React.useState('inflation');
+  const [fillStart, setFillStart] = React.useState(4.0);
+  const [fillEnd, setFillEnd] = React.useState(2.5);
+  const [fillConst, setFillConst] = React.useState(3.0);
+
+  const keys = [
+    { key: 'inflationByYear', after: 'inflation', label: 'Inflacja' },
+    { key: 'nbpRateByYear', after: 'nbpRate', label: 'Stopa NBP' },
+    { key: 'wibor6mByYear', after: 'wibor6m', label: 'WIBOR 6M' },
+    { key: 'depositRateByYear', after: 'depositRate', label: 'Lokata' },
+  ];
+
+  const setYearValue = (arrayKey, yearIdx, value) => {
+    setState(prev => {
+      const arr = [...prev[arrayKey]];
+      arr[yearIdx] = value;
+      return { ...prev, [arrayKey]: arr };
+    });
+  };
+
+  const setAfterValue = (afterKey, value) => {
+    setState(prev => ({
+      ...prev,
+      indicatorAfterYear12: { ...prev.indicatorAfterYear12, [afterKey]: value },
+    }));
+  };
+
+  const applyFill = () => {
+    const targetKey = keys.find(k => k.after === fillTarget);
+    if (!targetKey) return;
+    if (fillMode === 'linear') {
+      const vals = interpolateLinear(fillStart, fillEnd, 12);
+      setState(prev => ({ ...prev, [targetKey.key]: vals, indicatorAfterYear12: { ...prev.indicatorAfterYear12, [fillTarget]: fillEnd } }));
+    } else {
+      setState(prev => ({ ...prev, [targetKey.key]: Array(12).fill(fillConst), indicatorAfterYear12: { ...prev.indicatorAfterYear12, [fillTarget]: fillConst } }));
+    }
+    setFillMode(null);
+  };
+
+  return (
+    <div>
+      <div className="indicator-table-wrap" style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Rok</th>
+              {keys.map(k => <th key={k.key} style={thStyle}>{k.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: 12 }, (_, i) => (
+              <tr key={i}>
+                <td style={tdStyle}>{i + 1}</td>
+                {keys.map(k => (
+                  <td key={k.key} style={{ ...tdStyle, padding: '4px' }}>
+                    <PercentageInput compact value={state[k.key][i]} onChange={v => setYearValue(k.key, i, v)} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+            <tr style={{ background: 'var(--surface-2)' }}>
+              <td style={{ ...tdStyle, fontWeight: 600, fontSize: '0.8rem' }}>Po r. 12</td>
+              {keys.map(k => (
+                <td key={k.key} style={{ ...tdStyle, padding: '4px' }}>
+                  <PercentageInput compact value={state.indicatorAfterYear12[k.after]} onChange={v => setAfterValue(k.after, v)} />
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+        <button onClick={() => setFillMode(fillMode === 'linear' ? null : 'linear')}
+          style={{ ...btnSecondaryStyle, fontSize: '0.8rem', padding: '6px 14px' }}>
+          Wypełnij liniowo
+        </button>
+        <button onClick={() => setFillMode(fillMode === 'constant' ? null : 'constant')}
+          style={{ ...btnSecondaryStyle, fontSize: '0.8rem', padding: '6px 14px' }}>
+          Ustaw stałą wartość
+        </button>
+      </div>
+
+      {fillMode && (
+        <div style={{ ...cardStyle, marginTop: '0.75rem', padding: '1rem', background: 'var(--surface-2)' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <select value={fillTarget} onChange={e => setFillTarget(e.target.value)}
+              style={{ ...inputBaseStyle, width: 'auto' }}>
+              {keys.map(k => <option key={k.after} value={k.after}>{k.label}</option>)}
+            </select>
+            {fillMode === 'linear' ? (
+              <>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>od</span>
+                <PercentageInput compact value={fillStart} onChange={setFillStart} />
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>do</span>
+                <PercentageInput compact value={fillEnd} onChange={setFillEnd} />
+              </>
+            ) : (
+              <>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-2)' }}>wartość:</span>
+                <PercentageInput compact value={fillConst} onChange={setFillConst} />
+              </>
+            )}
+            <button onClick={applyFill} style={{ ...btnPrimaryStyle, padding: '6px 16px', fontSize: '0.8rem', minHeight: '32px' }}>
+              Zastosuj
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// STEP 3: IKE INFO VIEW (purely informational)
+// ============================================================
+
+function IKEView({ state, onNext, onBack }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* Main explanation */}
+      <div style={cardStyle}>
+        <h2 style={{ fontFamily: "'DM Serif Display', serif", fontSize: '1.375rem', marginBottom: '0.75rem' }}>
+          Czym jest IKE-Obligacje?
+        </h2>
+        <p style={{ color: 'var(--text-2)', fontSize: '0.9rem', lineHeight: 1.7, marginBottom: '1rem' }}>
+          <strong>IKE-Obligacje</strong> to konto , które pozwala kupować obligacje
+          skarbowe <strong>bez płacenia 19% podatku Belki od wypracowanych zysków</strong>.
+          Zwolnienie z podatku obowiązuje przy wypłacie po 60. roku życia lub po 55. roku życia,
+          jeśli nabyłeś uprawnienia emerytalne i wpłacałeś środki przez co najmniej 5 lat. 
+          Przy długim oszczędzaniu korzyść podatkowa może wyraźnie zwiększyć końcowy wynik inwestycji.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
+          {[
+            { label: 'Korzyść', text: 'Brak podatku 19% od zysków. Np. przy zysku 5 000 zł oszczędzasz 950 zł podatku.', color: 'var(--success)' },
+            { label: 'Koszt', text: 'Roczna opłata za prowadzenie konta (max 200 zł/rok). Przy 100 obligacjach w roku 8+ to ok. 10 zł/rok.', color: 'var(--warning)' },
+            { label: 'Limit', text: 'Roczny limit wpłat na IKE w 2026 roku wynosi 26 019,60 zł (ok. 260 obligacji).', color: 'var(--navy)' },
+          ].map((item, i) => (
+            <div key={i} style={{ display: 'flex', gap: '0.5rem', fontSize: '0.85rem', lineHeight: 1.5 }}>
+              <span style={{ fontWeight: 600, color: item.color, minWidth: '65px', flexShrink: 0 }}>{item.label}:</span>
+              <span style={{ color: 'var(--text-2)' }}>{item.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Fee table */}
+      <div style={cardStyle}>
+        <SectionLabel>Tabela opłat IKE-Obligacje (PKO BP)</SectionLabel>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Rok umowy</th>
+                <th style={thStyle}>Wskaźnik opłaty</th>
+                <th style={thStyle}>Max opłata roczna</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[1,2,3,4,5,6,7].map(y => (
+                <tr key={y}>
+                  <td style={tdStyle}>{y}{y === 1 ? ' (podpisania)' : ''}</td>
+                  <td style={tdStyle}>{(IKE_FEE_RATES[y] * 100).toFixed(2)}%</td>
+                  <td style={tdStyle}>{IKE_FEE_CAP} zł</td>
+                </tr>
+              ))}
+              <tr>
+                <td style={tdStyle}>8+</td>
+                <td style={tdStyle}>{(IKE_FEE_RATE_DEFAULT * 100).toFixed(2)}%</td>
+                <td style={tdStyle}>{IKE_FEE_CAP} zł</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginTop: '0.5rem', lineHeight: 1.5 }}>
+          Opłaty naliczane od wartości nominalnej obligacji na 31 grudnia.
+          W roku podpisania umowy: brak opłaty. Opłata pobierana 20 lutego roku następnego.
+        </p>
+      </div>
+
+      {/* How it works in the calculator */}
+      <div style={{ ...cardStyle, background: 'var(--accent-light)', borderColor: 'var(--accent)' }}>
+        <div style={{ fontSize: '0.85rem', color: 'var(--accent-dark)', lineHeight: 1.7 }}>
+          <strong>Jak to działa w kalkulatorze?</strong> Na ekranie wyników zobaczysz przełącznik
+          IKE ON / OFF. Domyślnie wyniki pokazują wariant bez IKE (z podatkiem Belki).
+          Po włączeniu IKE zobaczysz jak zmienią się kwoty — stare wartości będą przekreślone,
+          a obok pojawią się nowe z uwzględnieniem IKE. Na wykresie wariant bez IKE zostanie
+          wyszarzony dla porównania.
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <div className="btn-row" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <button onClick={onBack} style={btnSecondaryStyle}>{'\u2190'} Wróć</button>
+        <button onClick={onNext} style={btnPrimaryStyle}
+          onMouseOver={e => e.currentTarget.style.opacity = '0.9'}
+          onMouseOut={e => e.currentTarget.style.opacity = '1'}>
+          Pokaż wynik {'\u2192'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// STEP 4: RESULTS VIEW
+// ============================================================
+
+function ResultsView({ state, setState, onDetails, onRestart }) {
+  const [ikeOn, setIkeOn] = React.useState(false);
+  const [chartMode, setChartMode] = React.useState('nominal');
+  const [chartScenario, setChartScenario] = React.useState('obligacje');
+  const [withdrawEnabled, setWithdrawEnabled] = React.useState(false);
+  const [withdrawals, setWithdrawals] = React.useState({});
+
+  const chartRef = React.useRef(null);
+  const chartInstance = React.useRef(null);
+
+  const activeProducts = state.products.filter(p => (p.count || 0) > 0);
+  const activeBonds = activeProducts.filter(p => !['LOK', 'KOS'].includes(p.productId));
+  const activeRefs = activeProducts.filter(p => ['LOK', 'KOS'].includes(p.productId));
+
+  const bondTotalCount = activeBonds.reduce((s, p) => s + p.count, 0);
+  const bondCapital = bondTotalCount * 100;
+
+  const withdrawalsMap = React.useMemo(() => {
+    if (!withdrawEnabled) return null;
+    const map = {};
+    for (const [pid, w] of Object.entries(withdrawals)) {
+      if (w.year > 0 && w.count > 0) map[pid] = w;
+    }
+    return Object.keys(map).length > 0 ? map : null;
+  }, [withdrawEnabled, withdrawals]);
+
+  const results = calculateSimulation(state, withdrawalsMap);
+
+  if (!results || results.variants.length === 0) {
+    return <div style={cardStyle}>Brak wyników. Wróć i wybierz co najmniej jeden produkt.</div>;
+  }
+
+  const noIkeVariants = results.variants.filter(v => v.variantType === 'NO_IKE');
+  const ikeVariants = results.variants.filter(v => v.variantType === 'IKE_MET');
+
+  const bondNoIke = noIkeVariants.filter(v => !['LOK', 'KOS'].includes(v.productId));
+  const bondIke = ikeVariants.filter(v => !['LOK', 'KOS'].includes(v.productId));
+  const bondActiveVariants = ikeOn ? bondIke : bondNoIke;
+  const refActiveVariants = noIkeVariants.filter(v => ['LOK', 'KOS'].includes(v.productId));
+
+  const activeVariants = [...bondActiveVariants, ...refActiveVariants]
+    .sort((a, b) => b.finalValue - a.finalValue);
+
+  const kpiVariant = activeVariants[0];
+  const kpiNoIke = ikeOn ? bondNoIke.find(v => v.productId === kpiVariant?.productId) : null;
+
+  const h = results.horizon;
+  const cumInf = results.cumInflation;
+
+  // Nominal capital withdrawn early (used to correctly compute profit on remaining portfolio)
+  const totalWithdrawnCapital = activeBonds.reduce((s, p) => {
+    const w = withdrawalsMap?.[p.productId];
+    return s + (w && w.count > 0 ? Math.min(w.count, p.count - 1) * 100 : 0);
+  }, 0);
+  const displayCapital = bondCapital - totalWithdrawnCapital;
+
+  // Portfolio aggregates — subtract withdrawnGross so KPIs show remaining portfolio (matches chart)
+  const pfNoIkeVal  = bondNoIke.reduce((s, v) => s + v.finalValue - (v.withdrawnGross || 0), 0);
+  const pfIkeVal    = bondIke.reduce((s, v) => s + v.finalValue - (v.withdrawnGross || 0), 0);
+  const pfNoIkeReal = bondNoIke.reduce((s, v) => s + v.realValue - (v.withdrawnGross || 0) / (cumInf[h] || 1), 0);
+  const pfIkeReal   = bondIke.reduce((s, v) => s + v.realValue - (v.withdrawnGross || 0) / (cumInf[h] || 1), 0);
+  const pfTax       = bondNoIke.reduce((s, v) => s + v.tax, 0);
+  const pfIkeCost   = bondIke.reduce((s, v) => s + v.ikeCost, 0);
+  const pfActiveVal  = ikeOn ? pfIkeVal  : pfNoIkeVal;
+  const pfActiveReal = ikeOn ? pfIkeReal : pfNoIkeReal;
+  const pfActiveProfit = pfActiveVal - displayCapital;
+  const pfActiveTax    = ikeOn ? 0 : pfTax;
+  const pfActiveReturnPct = displayCapital > 0 ? pfActiveProfit / displayCapital * 100 : 0;
+  const pfNoIkeProfit = pfNoIkeVal - displayCapital;
+  const pfNoIkeReturnPct = displayCapital > 0 ? pfNoIkeProfit / displayCapital * 100 : 0;
+  const ikeBenefit = pfIkeVal - pfNoIkeVal;
+
+  // Ranking rows: portfolio entry + sorted refs
+  const sortedRefs = [...refActiveVariants].sort((a, b) => b.finalValue - a.finalValue);
+  const rankingRows = [
+    ...(bondActiveVariants.length > 0
+      ? [{ type: 'portfolio', val: pfActiveVal, real: pfActiveReal, returnPct: pfActiveReturnPct }]
+      : []),
+    ...sortedRefs.map(v => ({ type: 'ref', variant: v, val: v.finalValue })),
+  ].sort((a, b) => b.val - a.val);
+
+  // Portfolio-level insights
+  const portfolioInsights = [];
+  if (bondActiveVariants.length > 0) {
+    portfolioInsights.push(
+      `Portfel obligacji (${ikeOn ? 'z IKE' : 'bez IKE'}): ${formatPLN(pfActiveVal)} — zysk ${pfActiveProfit >= 0 ? '+' : ''}${formatPLN(pfActiveProfit)} (${pfActiveReturnPct >= 0 ? '+' : ''}${formatPct(pfActiveReturnPct)}).`
+    );
+    if (bondIke.length > 0 && bondNoIke.length > 0) {
+      if (ikeBenefit > 0) {
+        portfolioInsights.push(`IKE przynosi portfelowi ${formatPLN(ikeBenefit)} więcej niż bez IKE — mimo kosztów prowadzenia (${formatPLN(pfIkeCost)}).`);
+      } else if (ikeBenefit < 0) {
+        portfolioInsights.push(`Koszty IKE (${formatPLN(pfIkeCost)}) przewyższają korzyść podatkową przy horyzoncie ${h} lat — bez IKE wychodzi ${formatPLN(-ikeBenefit)} lepiej.`);
+      }
+    }
+    if (sortedRefs.length > 0) {
+      const bestRef = sortedRefs[0];
+      if (pfActiveVal > bestRef.finalValue) {
+        portfolioInsights.push(`Portfel obligacji bije ${PRODUCT_SHORT[bestRef.productId]} o ${formatPLN(pfActiveVal - bestRef.finalValue)}.`);
+      } else {
+        portfolioInsights.push(`${PRODUCT_SHORT[bestRef.productId]} (${formatPLN(bestRef.finalValue)}) przewyższa portfel obligacji o ${formatPLN(bestRef.finalValue - pfActiveVal)}.`);
+      }
+    }
+    if (pfActiveReal > bondCapital) {
+      portfolioInsights.push(`Portfel realnie rośnie — po inflacji ${formatPLN(pfActiveReal)} przekracza wpłacony kapitał ${formatPLN(bondCapital)}.`);
+    } else {
+      portfolioInsights.push(`Portfel realnie traci — po inflacji ${formatPLN(pfActiveReal)} jest poniżej wpłaconego kapitału ${formatPLN(bondCapital)}.`);
+    }
+  }
+
+  const totalWithdrawalFees = React.useMemo(() => {
+    if (!withdrawalsMap) return 0;
+    return [...bondActiveVariants, ...refActiveVariants].reduce((sum, v) => sum + (v.withdrawnRedemptionFee || 0), 0);
+  }, [bondActiveVariants, refActiveVariants, withdrawalsMap]);
+
+  const bondInflationData = cumInf.map(ci => bondCapital * ci);
+  const bondDoNothingData = cumInf.map((ci, i) => i === 0 ? bondCapital : bondCapital / ci);
+
+  const inflDropPct = (1 - 1 / (cumInf[h] || 1)) * 100;
+  const inflDropAmt = bondCapital - bondCapital / (cumInf[h] || 1);
+
+  // Bonds needing reinvestment note (maturity < horizon)
+  const reinvestBonds = activeBonds.filter(p => p.maturityMonths && p.maturityMonths / 12 < h);
+
+  // Whether to show "po Belce" extension column:
+  // - NO_IKE: bonds + refs have tax
+  // - IKE mode: refs (LOK/KOS) still pay Belka even with IKE
+  const taxableInNoIke = !ikeOn ? [...bondActiveVariants, ...refActiveVariants] : [];
+  const taxableAlways = refActiveVariants; // refs always pay regardless of IKE
+  const allTaxable = [...taxableInNoIke, ...taxableAlways.filter(v => ikeOn)];
+  // Simplified: show "po Belce" whenever any product pays tax
+  const hasTaxDrop = allTaxable.some(v => v.tax > 0) ||
+    (!ikeOn && bondActiveVariants.some(v => v.tax > 0)) ||
+    refActiveVariants.some(v => v.tax > 0);
+
+  // Helper: get bond bar value (remaining bonds, adjusted for withdrawal)
+  const getBondBarVal = (v, i, mode) => {
+    const wYear = withdrawalsMap?.[v.productId]?.year || null;
+    const wGross = v.withdrawnGross || 0;
+    let val = mode === 'real' ? v.yearlyValues[i].realValue : v.yearlyValues[i].value;
+    if (wGross > 0 && wYear && i >= wYear) {
+      val = Math.max(0, val - (mode === 'real' ? wGross / (cumInf[i] || 1) : wGross));
+    }
+    return val;
+  };
+
+  // Chart
+  React.useEffect(() => {
+    if (!chartRef.current || !results) return;
+    chartInstance.current?.destroy();
+
+    const baseLabels = Array.from({ length: h + 1 }, (_, i) => i === 0 ? 'Start' : 'Rok ' + i);
+    const labels = hasTaxDrop ? [...baseLabels, 'po Belce'] : baseLabels;
+    const datasets = [];
+
+    // End-zone shading plugin (shades last 1-2 columns for "obligacje" chart)
+    const endZonePlugin = {
+      id: 'endZone',
+      afterDraw(chart) {
+        if (chartScenario !== 'obligacje') return;
+        const { ctx, chartArea, scales } = chart;
+        const xScale = scales.x;
+        if (!xScale || !chartArea || xScale.ticks.length < 2) return;
+        const colW = xScale.getPixelForTick(1) - xScale.getPixelForTick(0);
+        // Shade from start of "Rok H" (index h) to right edge
+        const shadeX = xScale.getPixelForTick(h) - colW / 2;
+        ctx.save();
+        ctx.fillStyle = 'rgba(26,25,22,0.045)';
+        ctx.fillRect(shadeX, chartArea.top, chartArea.right - shadeX, chartArea.bottom - chartArea.top);
+        // Thin vertical line at start of shaded zone
+        ctx.strokeStyle = 'rgba(26,25,22,0.15)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(shadeX, chartArea.top);
+        ctx.lineTo(shadeX, chartArea.bottom);
+        ctx.stroke();
+        ctx.restore();
+      },
+    };
+
+    if (chartScenario === 'gotowka') {
+      datasets.push({
+        type: 'line',
+        label: 'Nominalna (wartość się nie zmienia)',
+        data: baseLabels.map(() => bondCapital),
+        borderColor: '#1E3A5F', backgroundColor: 'transparent',
+        tension: 0, pointRadius: 0, borderWidth: 2.5, order: 1,
+      });
+      datasets.push({
+        type: 'line',
+        label: 'Realna siła nabywcza (spada przez inflację)',
+        data: bondDoNothingData,
+        borderColor: '#92400E', backgroundColor: 'rgba(146,64,14,0.07)',
+        fill: true, borderDash: [5, 5], tension: 0.3,
+        pointRadius: 0, borderWidth: 2, order: 2,
+      });
+
+    } else if (chartScenario === 'obligacje') {
+
+      // -- Bond bars --
+      bondActiveVariants.forEach((v, idx) => {
+        const color = PRODUCT_COLORS[v.productId] || CHART_COLORS[idx % CHART_COLORS.length];
+        const data = v.yearlyValues.map((_, i) => getBondBarVal(v, i, chartMode));
+        // "po Belce" col: no bar — only sum line and ref lines appear there
+        if (hasTaxDrop) data.push(null);
+        datasets.push({
+          type: 'bar', label: v.label, data,
+          backgroundColor: color + '90', borderColor: color,
+          borderWidth: 1, barPercentage: 0.8, categoryPercentage: 0.85, order: 2,
+        });
+      });
+
+      // -- Total bonds sum line --
+      if (bondActiveVariants.length > 0) {
+        const totalData = baseLabels.map((_, i) =>
+          bondActiveVariants.reduce((sum, v) => sum + getBondBarVal(v, i, chartMode), 0)
+        );
+        if (hasTaxDrop) {
+          if (!ikeOn) {
+            const netTotal = bondActiveVariants.reduce((sum, v) => {
+              const wGross = v.withdrawnGross || 0;
+              const postTax = v.finalValue - wGross;
+              return sum + (chartMode === 'real' ? postTax / (cumInf[h] || 1) : postTax);
+            }, 0);
+            totalData.push(netTotal);
+          } else {
+            // IKE: bonds exempt from Belka — extend at same level as final year
+            totalData.push(totalData[h]);
+          }
+        }
+        datasets.push({
+          type: 'line', label: 'Suma portfela obligacji', data: totalData,
+          borderColor: '#1A1916', backgroundColor: 'transparent',
+          tension: 0.3, pointRadius: 3, pointBackgroundColor: '#1A1916',
+          borderWidth: 2.5, order: 0,
+        });
+      }
+
+      // -- Ref product lines (always NO_IKE) — extend to "po Belce" with after-tax --
+      refActiveVariants.forEach((v, idx) => {
+        const color = PRODUCT_COLORS[v.productId] || CHART_COLORS[(bondActiveVariants.length + idx) % CHART_COLORS.length];
+        const data = v.yearlyValues.map(y => chartMode === 'real' ? y.realValue : y.value);
+        if (hasTaxDrop) {
+          // Extend to "po Belce" with the after-tax final value
+          const postTaxVal = chartMode === 'real'
+            ? v.finalValue / (cumInf[h] || 1)
+            : v.finalValue;
+          data.push(postTaxVal);
+        }
+        datasets.push({
+          type: 'line', label: PRODUCT_SHORT[v.productId] + ' (bez IKE)', data,
+          borderColor: color, backgroundColor: 'transparent',
+          tension: 0.3, pointRadius: 3, pointBackgroundColor: color,
+          borderWidth: 2, borderDash: [6, 3], order: 1,
+        });
+      });
+
+      // -- Preservation of purchasing power line (renamed) --
+      const preserveLabel = chartMode === 'real'
+        ? 'Próg: 0% zysku realnego (zachowanie siły nabywczej)'
+        : 'Próg zachowania siły nabywczej (tyle pochłonie inflacja)';
+      const preserveData = chartMode === 'real'
+        ? baseLabels.map(() => bondCapital)   // flat in real terms
+        : bondInflationData.slice(0, h + 1);
+      if (hasTaxDrop) {
+        preserveData.push(chartMode === 'real' ? bondCapital : bondInflationData[h]);
+      }
+      datasets.push({
+        type: 'line', label: preserveLabel, data: preserveData,
+        borderColor: '#92400E', backgroundColor: 'transparent',
+        borderDash: [5, 5], tension: 0.3, pointRadius: 0,
+        borderWidth: 1.5, order: 3,
+      });
+    }
+
+    chartInstance.current = new Chart(chartRef.current, {
+      type: 'bar',
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { intersect: false, mode: 'index' },
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              usePointStyle: true, pointStyleWidth: 30, padding: 14,
+              font: { family: "'DM Sans', sans-serif", size: 11 },
+            },
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => ctx.parsed.y != null ? ctx.dataset.label + ': ' + formatPLN(ctx.parsed.y) : null,
+            },
+            filter: item => item.parsed.y != null,
+          },
+        },
+        scales: {
+          y: {
+            ticks: { callback: v => formatPLN(v), font: { family: "'DM Sans', sans-serif", size: 11 } },
+            grid: { color: 'rgba(0,0,0,0.05)' },
+          },
+          x: {
+            ticks: { font: { family: "'DM Sans', sans-serif", size: 11 } },
+            grid: { display: false },
+          },
+        },
+      },
+      plugins: [endZonePlugin],
+    });
+
+    return () => chartInstance.current?.destroy();
+  }, [results, chartMode, chartScenario, ikeOn, withdrawalsMap]);
+
+  const scenarioCaptions = {
+    gotowka: 'Pieniądze trzymane na nieoprocentowanym koncie lub w domu — nominalna wartość stoi w miejscu, realna kurczy się każdego roku.',
+    obligacje: ikeOn
+      ? 'Słupki = obligacje z IKE (bez Belki) · Brązowa przerywana = próg siły nabywczej · Szare tło = strefa zakończenia inwestycji'
+      : 'Słupki = obligacje · Linie przerywane = lokata/konto (bez IKE) · Kolumna "po Belce" = wartość po podatku · Szare tło = strefa zakończenia',
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+
+      {/* Hero */}
+      <div style={{ textAlign: 'center', marginBottom: '0.5rem' }}>
+        <h1 style={{ fontFamily: "'DM Serif Display', serif", fontSize: '2rem', marginBottom: '0.5rem' }}>
+          Wyniki symulacji
+        </h1>
+        <p style={{ color: 'var(--text-2)', fontSize: '0.95rem' }}>
+          Portfel: {bondTotalCount} obligacji ({formatPLN(bondCapital)}) na {results.horizon} lat.
+          {pfActiveVal > 0 && <> Wartość portfela po {results.horizon} latach: <strong>{formatPLN(pfActiveVal)}</strong>.</>}
+        </p>
+      </div>
+
+      {/* IKE Toggle */}
+      {activeBonds.length > 0 && (
+        <div style={{
+          ...cardStyle, padding: '1rem 1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          background: ikeOn ? 'var(--success-light)' : 'var(--surface)',
+          borderColor: ikeOn ? 'var(--success)' : 'var(--border)',
+          transition: 'all 0.2s ease',
+        }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: ikeOn ? 'var(--success)' : 'var(--text)' }}>
+              Wariant IKE <span style={{ fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-3)' }}>(tylko obligacje)</span>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
+              {ikeOn
+                ? 'Obligacje z IKE: brak podatku Belki, z opłatami. Lokata i konto — zawsze bez IKE.'
+                : 'Obligacje bez IKE: podatek Belki 19%. Lokata i konto — zawsze bez IKE.'}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-3)', fontWeight: 500 }}>{ikeOn ? 'ON' : 'OFF'}</span>
+            <ToggleSwitch checked={ikeOn} onChange={setIkeOn} />
+          </div>
+        </div>
+      )}
+
+      {/* KPI — kapitał → obligacje → produkt referencyjny */}
+      {bondActiveVariants.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+
+          {/* Wpłacony kapitał */}
+          <div style={{ ...cardStyle, padding: '1rem 1.25rem' }}>
+            <div style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.25rem' }}>Wpłacony kapitał</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{formatPLN(bondCapital)}</div>
+            {totalWithdrawnCapital > 0 && (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', marginTop: '0.15rem' }}>
+                pozostaje w portfelu: {formatPLN(displayCapital)}
+              </div>
+            )}
+          </div>
+
+          {/* Portfel obligacji */}
+          <div style={{
+            ...cardStyle, padding: '1.25rem 1.5rem',
+            borderColor: ikeOn ? 'var(--success)' : 'var(--border)',
+            background: ikeOn ? 'var(--success-light)' : 'var(--surface)',
+          }}>
+            <div style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: ikeOn ? 'var(--success)' : 'var(--text-3)', fontWeight: 600, marginBottom: '1rem' }}>
+              Portfel obligacji{ikeOn ? ' · z IKE' : ' · bez IKE'}
+            </div>
+            <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1.25rem' }}>
+
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>Wartość końcowa</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--navy)' }}>{formatPLN(pfActiveVal)}</div>
+                {ikeOn && pfNoIkeVal > 0 && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', textDecoration: 'line-through' }}>{formatPLN(pfNoIkeVal)}</div>
+                )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>Zysk nominalny</div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 600, color: pfActiveProfit >= 0 ? 'var(--success)' : 'var(--warning)' }}>
+                  {pfActiveProfit >= 0 ? '+' : ''}{formatPLN(pfActiveProfit)}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
+                  {pfActiveReturnPct >= 0 ? '+' : ''}{formatPct(pfActiveReturnPct)}
+                </div>
+                {ikeOn && pfNoIkeVal > 0 && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', textDecoration: 'line-through' }}>
+                    {pfNoIkeProfit >= 0 ? '+' : ''}{formatPLN(pfNoIkeProfit)}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>
+                  Wartość realna <TooltipInfo text="Skorygowana o inflację — rzeczywista siła nabywcza." />
+                </div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 600 }}>{formatPLN(pfActiveReal)}</div>
+                <div style={{ fontSize: '0.72rem', color: pfActiveReal >= bondCapital ? 'var(--success)' : 'var(--warning)' }}>
+                  {pfActiveReal >= bondCapital ? 'realnie rośnie' : 'realnie traci'}
+                </div>
+                {ikeOn && pfNoIkeReal > 0 && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', textDecoration: 'line-through' }}>{formatPLN(pfNoIkeReal)}</div>
+                )}
+              </div>
+
+              <div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>
+                  Podatek Belki <TooltipInfo text="Podatek 19% od zysku. Z IKE: 0 zł." />
+                </div>
+                <div style={{ fontSize: '1.2rem', fontWeight: 600, color: pfActiveTax > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                  {formatPLN(pfActiveTax)}
+                </div>
+                {ikeOn && pfTax > 0 && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-3)', textDecoration: 'line-through' }}>{formatPLN(pfTax)}</div>
+                )}
+              </div>
+
+              {ikeOn && (
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>
+                    Korzyść z IKE <TooltipInfo text="Różnica wartości portfela z IKE vs bez IKE, po kosztach prowadzenia." />
+                  </div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 600, color: ikeBenefit > 0 ? 'var(--success)' : ikeBenefit < 0 ? 'var(--warning)' : 'var(--text-3)' }}>
+                    {ikeBenefit >= 0 ? '+' : ''}{formatPLN(ikeBenefit)}
+                  </div>
+                  {pfIkeCost > 0 && <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>koszty: {formatPLN(pfIkeCost)}</div>}
+                </div>
+              )}
+
+            </div>
+          </div>
+
+          {/* Produkty referencyjne */}
+          {sortedRefs.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: sortedRefs.length > 1 ? '1fr 1fr' : '1fr', gap: '0.75rem' }}>
+              {sortedRefs.map(ref => {
+                const refCapital = ref.bondCount * 100;
+                const refProfit = ref.finalValue - refCapital;
+                return (
+                  <div key={ref.productId} style={{ ...cardStyle, padding: '1.25rem 1.5rem' }}>
+                    <div style={{ fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', fontWeight: 600, marginBottom: '1rem' }}>
+                      {PRODUCT_NAMES[ref.productId] || ref.label} <span style={{ fontWeight: 400 }}>· bez IKE</span>
+                    </div>
+                    <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1.25rem' }}>
+
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>Wartość końcowa</div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{formatPLN(ref.finalValue)}</div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>Zysk nominalny</div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 600, color: refProfit >= 0 ? 'var(--success)' : 'var(--warning)' }}>
+                          {refProfit >= 0 ? '+' : ''}{formatPLN(refProfit)}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-3)' }}>
+                          {ref.returnPct >= 0 ? '+' : ''}{formatPct(ref.returnPct)}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>
+                          Wartość realna <TooltipInfo text="Skorygowana o inflację — rzeczywista siła nabywcza." />
+                        </div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{formatPLN(ref.realValue)}</div>
+                        <div style={{ fontSize: '0.72rem', color: ref.realValue >= refCapital ? 'var(--success)' : 'var(--warning)' }}>
+                          {ref.realValue >= refCapital ? 'realnie rośnie' : 'realnie traci'}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '0.2rem' }}>Podatek Belki</div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: 600, color: ref.tax > 0 ? 'var(--warning)' : 'var(--text-3)' }}>{formatPLN(ref.tax)}</div>
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* Chart */}
+      <div style={cardStyle}>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+          <SegmentedControl
+            options={[
+              { value: 'gotowka', label: 'Gotówka bezczynna' },
+              { value: 'obligacje', label: 'Obligacje' },
+            ]}
+            value={chartScenario}
+            onChange={setChartScenario}
+          />
+          {chartScenario !== 'gotowka' && (
+            <SegmentedControl
+              options={[{ value: 'nominal', label: 'Nominalnie' }, { value: 'real', label: 'Realnie' }]}
+              value={chartMode} onChange={setChartMode}
+              helpTexts={{
+                nominal: 'Kwota w złotówkach bez korekty o inflację.',
+                real: 'Kwota skorygowana o inflację — rzeczywista siła nabywcza.',
+              }} />
+          )}
+        </div>
+
+        <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginBottom: '0.75rem' }}>
+          {scenarioCaptions[chartScenario]}
+        </div>
+
+        <div className="chart-wrap" style={{ height: '400px', position: 'relative' }}>
+          <canvas ref={chartRef} />
+
+          {/* Gotówka overlay */}
+          {chartScenario === 'gotowka' && (
+            <div style={{
+              position: 'absolute', top: '50%', left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              background: 'rgba(255,255,255,0.93)',
+              padding: '1rem 1.5rem',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-md)',
+              maxWidth: '260px',
+              pointerEvents: 'none',
+              zIndex: 5,
+            }}>
+              <div style={{
+                fontFamily: "'DM Serif Display', serif",
+                fontSize: '2rem', fontWeight: 700,
+                color: 'var(--warning)', lineHeight: 1, marginBottom: '0.4rem',
+              }}>
+                -{formatPct(inflDropPct)}
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text)', fontWeight: 600, marginBottom: '0.25rem' }}>
+                utrata siły nabywczej
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-2)', lineHeight: 1.5 }}>
+                Po {h} latach {formatPLN(bondCapital)} straci realnie {formatPLN(inflDropAmt)} — bez żadnej inwestycji, tylko przez inflację.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Reinvestment note for bonds with maturity < horizon */}
+        {chartScenario === 'obligacje' && reinvestBonds.length > 0 && (
+          <div style={{
+            marginTop: '0.75rem', padding: '0.6rem 0.875rem',
+            background: 'var(--navy-light)', borderRadius: 'var(--radius-sm)',
+            border: '1px solid var(--navy)', fontSize: '0.78rem', color: 'var(--navy)',
+            lineHeight: 1.55,
+          }}>
+            <strong>Założenie: automatyczne reinwestowanie.</strong>{' '}
+            {reinvestBonds.map(p => PRODUCT_SHORT[p.productId]).join(', ')} ma{reinvestBonds.length > 1 ? 'ją' : ''} termin zapadalności krótszy niż wybrany horyzont ({h} lat).
+            Symulacja zakłada, że po wykupie środki są natychmiast reinwestowane w ten sam typ obligacji na tych samych warunkach.
+          </div>
+        )}
+      </div>
+
+      {/* Partial withdrawal */}
+      <div style={cardStyle}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '1.25rem',
+          paddingBottom: withdrawEnabled ? '1.25rem' : 0,
+          marginBottom: withdrawEnabled ? '1.25rem' : 0,
+          borderBottom: withdrawEnabled ? '1px solid var(--border)' : 'none',
+        }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.25rem' }}>Wcześniejszy wykup</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', lineHeight: 1.55 }}>
+              Zasymuluj wykup części obligacji przed terminem — wybierz produkt, rok i liczbę sztuk. Mogą wystąpić opłaty za przedterminowy wykup.
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-3)', fontWeight: 500 }}>{withdrawEnabled ? 'ON' : 'OFF'}</span>
+            <ToggleSwitch checked={withdrawEnabled} onChange={val => {
+              setWithdrawEnabled(val);
+              if (!val) setWithdrawals({});
+            }} />
+          </div>
+        </div>
+
+        {withdrawEnabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {activeBonds.map(product => {
+              const w = withdrawals[product.productId] || { year: 0, count: 0 };
+              const color = PRODUCT_COLORS[product.productId] || 'var(--text-3)';
+              const matYears = product.maturityMonths ? product.maturityMonths / 12 : null;
+              const isEarly = matYears && w.year > 0 && w.year < matYears;
+              return (
+                <div key={product.productId} style={{
+                  display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem 1rem',
+                  background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)',
+                  borderLeft: '3px solid ' + color, flexWrap: 'wrap',
+                }}>
+                  <div style={{ minWidth: '80px' }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.85rem', color }}>{PRODUCT_SHORT[product.productId]}</div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-3)' }}>{product.count} szt.</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '2px' }}>Rok wykupu</div>
+                    <input type="number" value={w.year} min={0} max={state.horizon}
+                      onFocus={e => e.target.select()}
+                      onChange={e => setWithdrawals(prev => ({
+                        ...prev,
+                        [product.productId]: { ...prev[product.productId], year: clamp(parseInt(e.target.value) || 0, 0, state.horizon), count: prev[product.productId]?.count || 0 },
+                      }))}
+                      style={{ ...inputBaseStyle, width: '70px', textAlign: 'center', padding: '6px 8px', fontSize: '0.85rem' }} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginBottom: '2px' }}>Ile szt.</div>
+                    <input type="number" value={w.count} min={0} max={product.count - 1}
+                      onFocus={e => e.target.select()}
+                      onChange={e => setWithdrawals(prev => ({
+                        ...prev,
+                        [product.productId]: { ...prev[product.productId], count: clamp(parseInt(e.target.value) || 0, 0, product.count - 1), year: prev[product.productId]?.year || 0 },
+                      }))}
+                      style={{ ...inputBaseStyle, width: '70px', textAlign: 'center', padding: '6px 8px', fontSize: '0.85rem' }} />
+                  </div>
+                  {isEarly && w.count > 0 && (
+                    <div style={{ fontSize: '0.75rem', color: 'var(--warning)', fontWeight: 500 }}>
+                      Opłata: {formatPLN(product.earlyRedemptionFee * w.count)}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {withdrawEnabled && totalWithdrawalFees > 0 && (
+          <div style={{
+            marginTop: '1rem', background: 'var(--warning-light)',
+            borderRadius: 'var(--radius-sm)', padding: '0.75rem 1rem',
+            border: '1px solid var(--warning)', fontSize: '0.85rem', lineHeight: 1.6,
+          }}>
+            <div style={{ fontWeight: 600, color: 'var(--warning)', marginBottom: '0.25rem' }}>Koszty wcześniejszego wykupu</div>
+            {activeVariants.filter(v => (v.withdrawnRedemptionFee || 0) > 0).map(v => (
+              <div key={v.productId + v.variantType} style={{ color: 'var(--warning)', display: 'flex', justifyContent: 'space-between' }}>
+                <span>{PRODUCT_SHORT[v.productId]}:</span>
+                <span style={{ fontWeight: 600 }}>{formatPLN(v.withdrawnRedemptionFee)}</span>
+              </div>
+            ))}
+            <div style={{ borderTop: '1px solid var(--warning)', marginTop: '0.5rem', paddingTop: '0.5rem', display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: 'var(--warning)' }}>
+              <span>Razem:</span><span>{formatPLN(totalWithdrawalFees)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Ranking — portfolio vs refs */}
+      <div style={cardStyle}>
+        <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '1rem' }}>
+          Porównanie
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {rankingRows.map((row, idx) => {
+            const isFirst = idx === 0;
+            const rowStyle = {
+              borderRadius: 'var(--radius-sm)',
+              border: isFirst ? '1px solid var(--success)' : '1px solid transparent',
+              background: isFirst ? 'var(--success-light)' : 'var(--surface-2)',
+            };
+            const badgeStyle = {
+              width: '28px', height: '28px', borderRadius: '50%', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 700,
+              flexShrink: 0,
+              background: isFirst ? 'var(--success)' : 'var(--surface)',
+              color: isFirst ? '#fff' : 'var(--text-3)',
+              border: isFirst ? 'none' : '1px solid var(--border)',
+            };
+
+            if (row.type === 'portfolio') {
+              const bondBreakdown = bondActiveVariants.map(v =>
+                `${PRODUCT_SHORT[v.productId]} ${v.bondCount} szt.`
+              ).join(' · ');
+              return (
+                <div key="portfolio" style={{ ...rowStyle, padding: '0.875rem 1rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={badgeStyle}>{idx + 1}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                        Portfel obligacji
+                        <span style={{ fontWeight: 400, fontSize: '0.75rem', color: 'var(--text-3)', marginLeft: '6px' }}>
+                          {ikeOn ? '(IKE)' : '(bez IKE)'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.73rem', color: 'var(--text-3)', marginTop: '2px' }}>
+                        Realna: {formatPLN(pfActiveReal)}
+                        {pfIkeCost > 0 && ikeOn && ' \u00B7 koszty IKE: ' + formatPLN(pfIkeCost)}
+                        {pfTax > 0 && !ikeOn && ' \u00B7 Belka: ' + formatPLN(pfTax)}
+                      </div>
+                      {bondBreakdown && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', marginTop: '3px', opacity: 0.8 }}>
+                          {bondBreakdown}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{formatPLN(pfActiveVal)}</div>
+                      {ikeOn && pfNoIkeVal > 0 && (
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-3)', textDecoration: 'line-through' }}>{formatPLN(pfNoIkeVal)}</div>
+                      )}
+                      <div style={{ fontSize: '0.75rem', color: pfActiveReturnPct >= 0 ? 'var(--success)' : 'var(--warning)' }}>
+                        {pfActiveReturnPct >= 0 ? '+' : ''}{formatPct(pfActiveReturnPct)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Ref product row
+            const v = row.variant;
+            const refReturnPct = v.returnPct;
+            return (
+              <div key={v.productId} style={{ ...rowStyle, padding: '0.875rem 1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <div style={badgeStyle}>{idx + 1}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>
+                      {PRODUCT_NAMES[v.productId] || v.label}
+                      <span style={{ fontWeight: 400, fontSize: '0.7rem', color: 'var(--text-3)', marginLeft: '6px' }}>(bez IKE · {v.bondCount} szt.)</span>
+                    </div>
+                    <div style={{ fontSize: '0.73rem', color: 'var(--text-3)', marginTop: '2px' }}>
+                      Realna: {formatPLN(v.realValue)}
+                      {v.tax > 0 && ' \u00B7 Belka: ' + formatPLN(v.tax)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>{formatPLN(v.finalValue)}</div>
+                    <div style={{ fontSize: '0.75rem', color: refReturnPct >= 0 ? 'var(--success)' : 'var(--warning)' }}>
+                      {refReturnPct >= 0 ? '+' : ''}{formatPct(refReturnPct)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Insights — portfolio-level */}
+      {portfolioInsights.length > 0 && (
+        <div style={cardStyle}>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem' }}>Wnioski</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {portfolioInsights.map((ins, i) => (
+              <div key={i} style={{
+                display: 'flex', gap: '0.5rem', padding: '0.75rem', background: 'var(--surface-2)',
+                borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', lineHeight: 1.5,
+              }}>
+                <span style={{ flexShrink: 0, color: 'var(--accent)', fontWeight: 700 }}>{'\u2022'}</span>
+                <span>{ins}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* CTA */}
+      <div className="btn-row" style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <button onClick={onRestart} style={btnSecondaryStyle}>Zmień ustawienia</button>
+        <button onClick={onDetails} style={btnPrimaryStyle}
+          onMouseOver={e => e.currentTarget.style.opacity = '0.9'}
+          onMouseOut={e => e.currentTarget.style.opacity = '1'}>
+          Zobacz szczegóły {'\u2192'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// STEP 5: DETAILS VIEW
+// ============================================================
+
+function DetailsView({ state, setState, onBack }) {
+  const [tab, setTab] = React.useState(0);
+  const tabs = ['Rok po roku', 'Założenia', 'Produkty', 'IKE', 'Metodologia'];
+  const results = state.results;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div style={{ display: 'flex', gap: '0', borderBottom: '2px solid var(--border)', overflowX: 'auto' }}>
+        {tabs.map((t, i) => (
+          <button key={i} onClick={() => setTab(i)}
+            style={{
+              padding: '10px 20px', background: 'none', border: 'none', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: '0.85rem', fontWeight: tab === i ? 600 : 400,
+              color: tab === i ? 'var(--accent)' : 'var(--text-3)',
+              borderBottom: tab === i ? '2px solid var(--accent)' : '2px solid transparent',
+              marginBottom: '-2px', whiteSpace: 'nowrap', transition: 'all 0.2s ease',
+            }}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === 0 && <YearByYearTab results={results} state={state} />}
+      {tab === 1 && <AssumptionsTab state={state} />}
+      {tab === 2 && <ProductsTab state={state} />}
+      {tab === 3 && <IKETab state={state} />}
+      {tab === 4 && <MethodologyTab />}
+
+      <div className="btn-row" style={{ display: 'flex', justifyContent: 'flex-start' }}>
+        <button onClick={onBack} style={btnSecondaryStyle}>{'\u2190'} Wróć do wyniku</button>
+      </div>
+    </div>
+  );
+}
+
+function YearByYearTab({ results, state }) {
+  const [mode, setMode] = React.useState('value');
+  if (!results) return null;
+  const capital = state.products.reduce((s, p) => s + (p.count || 0) * 100, 0);
+  const variants = results.variants.filter(v => v.productId !== 'INF');
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h3 style={{ fontSize: '1.05rem', fontWeight: 600 }}>Wartości rok po roku</h3>
+        <SegmentedControl
+          options={[{ value: 'value', label: 'Nominalna' }, { value: 'return', label: 'Stopa zwrotu' }]}
+          value={mode} onChange={setMode} />
+      </div>
+      <div className="detail-table-wrap" style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem', minWidth: '600px' }}>
+          <thead>
+            <tr>
+              <th style={{ ...thStyle, position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>Rok</th>
+              {variants.map(v => <th key={v.productId + v.variantType} style={thStyle}>{v.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: results.horizon + 1 }, (_, y) => (
+              <tr key={y}>
+                <td style={{ ...tdStyle, fontWeight: 600, position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1 }}>
+                  {y === 0 ? 'Start' : y}
+                </td>
+                {variants.map(v => {
+                  const val = v.yearlyValues[y]?.value ?? capital;
+                  return (
+                    <td key={v.productId + v.variantType} style={tdStyle}>
+                      {mode === 'value' ? formatPLN(val) : (y === 0 ? '\u2014' : formatPct(((val - capital) / capital) * 100))}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AssumptionsTab({ state }) {
+  const indicators = buildIndicators(state);
+  return (
+    <div style={cardStyle}>
+      <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '1rem' }}>Wskaźniki rok po roku</h3>
+      <div className="detail-table-wrap" style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Rok</th>
+              <th style={thStyle}>Inflacja</th>
+              <th style={thStyle}>Stopa NBP</th>
+              <th style={thStyle}>WIBOR 6M</th>
+              <th style={thStyle}>Lokata</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: state.horizon }, (_, i) => (
+              <tr key={i}>
+                <td style={{ ...tdStyle, fontWeight: 600 }}>{i + 1}</td>
+                <td style={tdStyle}>{formatPct(indicators.inflation[i])}</td>
+                <td style={tdStyle}>{formatPct(indicators.nbpRate[i])}</td>
+                <td style={tdStyle}>{formatPct(indicators.wibor6m[i])}</td>
+                <td style={tdStyle}>{formatPct(indicators.depositRate[i])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {state.horizon > 12 && (
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-3)', marginTop: '0.5rem' }}>
+          Po roku 12: Inflacja {formatPct(state.indicatorAfterYear12.inflation)}, NBP {formatPct(state.indicatorAfterYear12.nbpRate)}, WIBOR {formatPct(state.indicatorAfterYear12.wibor6m)}, Lokata {formatPct(state.indicatorAfterYear12.depositRate)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ProductsTab({ state }) {
+  const enabled = state.products.filter(p => (p.count || 0) > 0);
+  return (
+    <div style={cardStyle}>
+      <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '1rem' }}>Aktywne produkty</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+        {enabled.map(p => (
+          <div key={p.productId} style={{ padding: '0.75rem 1rem', background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid ' + (PRODUCT_COLORS[p.productId] || 'var(--border)') }}>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '0.25rem' }}>{PRODUCT_NAMES[p.productId]}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-2)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.25rem' }}>
+              <span>Start: {formatPct(p.initialRate)}</span>
+              {p.margin > 0 && <span>Marża: {formatPct(p.margin)}</span>}
+              <span>Indeks: {INDEX_LABELS[p.indexType]}</span>
+              {p.maturityMonths && <span>Zapadalność: {p.maturityMonths / 12} lat</span>}
+              {p.earlyRedemptionFee > 0 && <span>Wykup: {p.earlyRedemptionFee} zł/szt</span>}
+              {p.fixedRate !== undefined && <span>Stopa: {formatPct(p.fixedRate)}</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IKETab({ state }) {
+  const totalBonds = state.products.reduce((s, p) => s + (p.count || 0), 0);
+  const ikeFees = calculateIkeFees(totalBonds, state.horizon, state.ikeAdditionalCosts || 0);
+  return (
+    <div style={cardStyle}>
+      <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '1rem' }}>Opłaty IKE rok po roku</h3>
+      <div className="detail-table-wrap" style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+          <thead>
+            <tr>
+              <th style={thStyle}>Rok</th>
+              <th style={thStyle}>Rok umowy</th>
+              <th style={thStyle}>Wskaźnik</th>
+              <th style={thStyle}>Opłata surowa</th>
+              <th style={thStyle}>Opłata (po cap)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ikeFees.fees.map(f => (
+              <tr key={f.year}>
+                <td style={tdStyle}>{f.year}</td>
+                <td style={tdStyle}>{f.contractYear}</td>
+                <td style={tdStyle}>{(f.feeRate * 100).toFixed(2)}%</td>
+                <td style={tdStyle}>{formatPLN(f.rawFee)}</td>
+                <td style={tdStyle}>{formatPLN(f.fee)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ fontWeight: 600 }}>
+              <td colSpan={4} style={{ ...tdStyle, textAlign: 'right' }}>Suma:</td>
+              <td style={tdStyle}>{formatPLN(ikeFees.total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {state.results && (
+        <div style={{ marginTop: '1.25rem' }}>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 600, marginBottom: '0.75rem' }}>Porównanie wariantów</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            {['NO_IKE', 'IKE_MET'].map(vt => {
+              const best = state.results.variants.filter(v => v.variantType === vt).sort((a, b) => b.finalValue - a.finalValue)[0];
+              if (!best) return null;
+              const labels = { NO_IKE: 'Bez IKE (z podatkiem Belki)', IKE_MET: 'Z IKE (bez podatku)' };
+              return (
+                <div key={vt} style={{ padding: '1rem', background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-3)', marginBottom: '0.25rem' }}>{labels[vt]}</div>
+                  <div style={{ fontWeight: 600 }}>{formatPLN(best.finalValue)}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>
+                    Podatek: {formatPLN(best.tax)} {'\u00B7'} IKE: {formatPLN(best.ikeCost)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MethodologyTab() {
+  const sections = [
+    {
+      title: 'Jak liczone jest oprocentowanie rok po roku?',
+      content: 'Rok 1: Oprocentowanie startowe produktu (np. 5,60% dla EDO).\nRok 2+: Wskaźnik z roku poprzedniego + marża produktu (np. inflacja z roku 1 + 2,00% dla EDO).\nDla produktów stałych (TOS, LOK, KOS): stała wartość przez cały okres.\nDla zmiennoprocentowych (ROR, DOR): stopa referencyjna NBP + marża.',
+    },
+    {
+      title: 'Kapitalizacja vs Kupon',
+      content: 'Kapitalizacja (TOS, EDO, ROS, ROD, LOK, KOS): odsetki dodawane do kapitału każdego roku.\nWzór: wartość[rok] = wartość[rok-1] \u00D7 (1 + oprocentowanie/100)\n\nKupon (ROR, DOR, COI): odsetki wypłacane co miesiąc/rok.\nWzór: wartość końcowa = kapitał + \u03A3(kapitał \u00D7 oprocentowanie/100)',
+    },
+    {
+      title: 'Podatek Belki (19%)',
+      content: 'Naliczany od zysku (różnica między wartością końcową a kapitałem początkowym).\nStandard: podatek = max(zysk, 0) \u00D7 0,19\nIKE \u2014 spełniam warunki: brak podatku\nIKE \u2014 nie spełniam warunków: podatek jak standard',
+    },
+    {
+      title: 'Wartość realna vs nominalna',
+      content: 'Wartość nominalna: zmiana kapitału w cenach bieżących.\nWartość realna: wartość nominalna skorygowana o inflację.\nWzór: realValue[rok] = nominalValue[rok] / cumulativeInflation[rok]\nInflacja skumulowana[rok] = \u220F(1 + inflacja[i]/100) dla i=1..rok\n\nJeśli wartość realna maleje \u2014 inwestycja traci siłę nabywczą.',
+    },
+    {
+      title: 'Opłaty IKE',
+      content: 'Rok umowy IKE = rok symulacji. Rok 1 umowy = rok zakupu obligacji.\nWskaźnik opłaty zależy od roku umowy:\n\u2022 Rok 1 (podpisania): 0,00% \u2014 brak opłaty\n\u2022 Rok 2\u20137: zmniejszający się procent (0,16% \u2192 0,11%)\n\u2022 Rok 8+: 0,10%\nOpłata surowa: nominał \u00D7 wskaźnik. Opłata rzeczywista: min(opłata surowa, 200 zł) + dodatkowe koszty.',
+    },
+    {
+      title: 'Wcześniejszy wykup',
+      content: 'Koszt = opłata za wykup \u00D7 liczba obligacji, odliczany od wartości końcowej.\nOchrona nominalna: jeśli aktywna, gwarantuje że wartość \u2265 (kapitał - koszt wykupu).',
+    },
+    {
+      title: 'Uproszczenia w MVP',
+      content: '\u2022 ROR, DOR: uproszczona logika (stała stopa rocznie, bez pełnych zmian miesięcznych)\n\u2022 Reinwestycja kuponów: nie uwzględniana (kupon = płatność bezpowrotna)\n\u2022 Ochrona nominalna: sprawdzana na koniec horyzontu, nie co miesiąc\n\u2022 Wahania kursu obligacji: ignorowane (zakup i trzymanie do zapadalności)',
+    },
+  ];
+
+  return (
+    <div style={cardStyle}>
+      <h3 style={{ fontFamily: "'DM Serif Display', serif", fontSize: '1.375rem', marginBottom: '1.25rem' }}>Metodologia kalkulatora</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {sections.map((s, i) => (
+          <div key={i}>
+            <h4 style={{ fontSize: '0.95rem', fontWeight: 600, marginBottom: '0.5rem' }}>{s.title}</h4>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-2)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{s.content}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// APP
+// ============================================================
+
+function App() {
+  const [state, setState] = React.useState({
+    step: 0,
+    maxReached: 0,
+    horizon: 12,
+    preset: 'bazowy',
+    indicatorMode: 'simple',
+    inflationByYear:    [...DEFAULT_INFLATION],
+    nbpRateByYear:      [...DEFAULT_NBP_RATE],
+    wibor6mByYear:      [...DEFAULT_WIBOR6M],
+    depositRateByYear:  [...DEFAULT_DEPOSIT_RATE],
+    indicatorAfterYear12: { inflation: 2.5, nbpRate: 3.50, wibor6m: 3.40, depositRate: 3.50 },
+    products: ALL_DEFAULT_PRODUCTS.map(p => ({ ...p })),
+    ikeEnabled: true,
+    ikeConditionsMet: true,
+    ikeAdditionalCosts: 0,
+    results: null,
+    loading: false,
+    portfolioWide: false,
+  });
+
+  const goTo = (step) => {
+    setState(prev => ({ ...prev, step, maxReached: Math.max(prev.maxReached, step) }));
+    window.scrollTo(0, 0);
+  };
+
+  const runSimulation = (nextStep) => {
+    setState(prev => ({ ...prev, loading: true }));
+    setTimeout(() => {
+      setState(prev => {
+        const results = calculateSimulation(prev);
+        return { ...prev, results, loading: false, step: nextStep, maxReached: Math.max(prev.maxReached, nextStep) };
+      });
+      window.scrollTo(0, 0);
+    }, 300);
+  };
+
+  if (state.loading) {
+    return (
+      <div style={{ maxWidth: '860px', margin: '0 auto', padding: '2rem 1.5rem', textAlign: 'center' }}>
+        <Header />
+        <div style={{ ...cardStyle, padding: '3rem', marginTop: '2rem' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: 500, marginBottom: '0.5rem' }}>Obliczam...</div>
+          <p style={{ color: 'var(--text-2)' }}>Porównuję warianty inwestycji</p>
+        </div>
+      </div>
+    );
+  }
+
+  const containerMaxWidth = state.step === 1
+    ? (state.portfolioWide ? '1300px' : '920px')
+    : '860px';
+
+  return (
+    <div style={{ maxWidth: containerMaxWidth, margin: '0 auto', padding: '2rem 1.5rem', transition: 'max-width 0.3s ease' }}>
+      <Header />
+      <Stepper step={state.step} maxReached={state.maxReached} onStepClick={(s) => {
+        if (s === 3 && state.results) goTo(3);
+        else if (s < 3) goTo(s);
+      }} />
+
+      {state.step === 0 && (
+        <StartView onNext={() => goTo(1)} />
+      )}
+      {state.step === 1 && (
+        <PortfolioView state={state} setState={setState} onNext={() => goTo(2)} onBack={() => goTo(0)} />
+      )}
+      {state.step === 2 && (
+        <IKEView state={state}
+          onNext={() => runSimulation(3)}
+          onBack={() => goTo(1)} />
+      )}
+      {state.step === 3 && (
+        <ResultsView state={state} setState={setState}
+          onDetails={() => goTo(4)}
+          onRestart={() => goTo(1)} />
+      )}
+      {state.step === 4 && (
+        <DetailsView state={state} setState={setState} onBack={() => goTo(3)} />
+      )}
+
+      <div style={{ textAlign: 'center', padding: '2rem 0 1rem', fontSize: '0.75rem', color: 'var(--text-3)' }}>
+        Kalkulator ma charakter edukacyjny. Nie stanowi porady inwestycyjnej.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
